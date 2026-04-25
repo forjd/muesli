@@ -4,10 +4,10 @@ set -euo pipefail
 APP_NAME="Muesli"
 BUNDLE_ID="com.local.Muesli"
 MIN_SYSTEM_VERSION="14.0"
-VERSION="${MUESLI_VERSION:-0.1.0}"
 CONFIGURATION="release"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="${MUESLI_VERSION:-$(tr -d '[:space:]' < "$ROOT_DIR/version.txt")}"
 DIST_DIR="$ROOT_DIR/dist"
 RELEASE_DIR="$DIST_DIR/release"
 APP_BUNDLE="$RELEASE_DIR/$APP_NAME.app"
