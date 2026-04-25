@@ -28,6 +28,7 @@ final class TranscriptionStore: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
     private var liveChunkQueue: Task<Void, Never>?
+    private var dictationTargetApp: NSRunningApplication?
     private let longRecordingFinalPassLimit: TimeInterval = 30 * 60
 
     init() {
@@ -137,6 +138,20 @@ final class TranscriptionStore: ObservableObject {
         }
 
         await transcribe(sessionID: session.id)
+    }
+
+    func toggleDictationPaste() async {
+        if isRecording {
+            guard let sessionID = stopRecording() else { return }
+            await transcribe(sessionID: sessionID)
+            pasteTranscript(sessionID: sessionID)
+        } else {
+            dictationTargetApp = NSWorkspace.shared.frontmostApplication
+            await startRecording()
+            if isRecording {
+                statusMessage = "Dictation recording; press Command-Shift-D to paste."
+            }
+        }
     }
 
     func transcribe(sessionID: TranscriptSession.ID) async {
@@ -412,6 +427,34 @@ final class TranscriptionStore: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(session.displayTranscript, forType: .string)
         statusMessage = "Transcript copied."
+    }
+
+    private func pasteTranscript(sessionID: TranscriptSession.ID) {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        let text = session.displayTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            statusMessage = "No transcript to paste."
+            return
+        }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+
+        let target = dictationTargetApp
+        dictationTargetApp = nil
+        target?.activate()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            let source = CGEventSource(stateID: .combinedSessionState)
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
+            keyDown?.flags = .maskCommand
+            keyUp?.flags = .maskCommand
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
+        }
+
+        statusMessage = "Pasted transcript."
     }
 
     func updateTranscript(sessionID: TranscriptSession.ID, text: String) {
