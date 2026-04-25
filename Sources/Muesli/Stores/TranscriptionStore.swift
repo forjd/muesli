@@ -479,55 +479,17 @@ final class TranscriptionStore: ObservableObject {
         Self.pasteLogger.info("Paste target app=\(target?.localizedName ?? "nil", privacy: .public) bundle=\(targetBundleIdentifier ?? "nil", privacy: .public) pid=\(target?.processIdentifier ?? -1, privacy: .public) capturedAX=\(Self.describeAccessibilityElement(targetElement), privacy: .public)")
 
         statusMessage = "Copied transcript; attempting paste into \(target?.localizedName ?? "front app")..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            let capturedAX = Self.insertTextWithAccessibility(text, into: targetElement)
-            Self.pasteLogger.info("Captured AX insert succeeded=\(capturedAX.succeeded, privacy: .public) detail=\(capturedAX.detail, privacy: .public)")
-            if capturedAX.succeeded {
-                Task { @MainActor in
-                    self?.statusMessage = "Inserted transcript into \(target?.localizedName ?? "front app")."
-                }
-                return
-            }
-
-            let focusedElement = Self.focusedAccessibilityElement()
-            Self.pasteLogger.info("Post-activation focusedAX=\(Self.describeAccessibilityElement(focusedElement), privacy: .public)")
-            let focusedAX = Self.insertTextWithAccessibility(text, into: focusedElement)
-            Self.pasteLogger.info("Focused AX insert succeeded=\(focusedAX.succeeded, privacy: .public) detail=\(focusedAX.detail, privacy: .public)")
-            if focusedAX.succeeded {
-                Task { @MainActor in
-                    self?.statusMessage = "Inserted transcript into focused field."
-                }
-                return
-            }
-
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             if let processIdentifier = target?.processIdentifier {
-                Self.pasteLogger.info("Posting unicode text to pid=\(processIdentifier, privacy: .public)")
-                Self.postUnicodeText(text, to: processIdentifier)
-            } else {
-                Self.pasteLogger.info("Posting unicode text to session")
-                Self.postUnicodeTextToSession(text)
-            }
-
-            let scriptError = Self.postPasteWithSystemEvents(targetBundleIdentifier: targetBundleIdentifier)
-            if let scriptError {
-                Self.pasteLogger.error("System Events paste failed: \(scriptError, privacy: .public)")
-            } else {
-                Self.pasteLogger.info("System Events paste returned without error")
-            }
-
-            if let processIdentifier = target?.processIdentifier {
-                Self.pasteLogger.info("Posting Command-V to pid=\(processIdentifier, privacy: .public)")
+                Self.pasteLogger.info("Posting single Command-V to pid=\(processIdentifier, privacy: .public)")
                 Self.postPasteShortcut(to: processIdentifier)
+            } else {
+                Self.pasteLogger.info("Posting single Command-V to session event tap")
+                Self.postPasteShortcutToSession()
             }
-            Self.pasteLogger.info("Posting Command-V to session event tap")
-            Self.postPasteShortcutToSession()
 
             Task { @MainActor in
-                if let scriptError {
-                    self?.statusMessage = "Copied transcript; paste failed. AX: \(capturedAX.detail). Script: \(scriptError)"
-                } else {
-                    self?.statusMessage = "Copied transcript; paste fallback sent. AX: \(capturedAX.detail)"
-                }
+                self?.statusMessage = "Copied transcript and sent paste shortcut."
             }
         }
     }
@@ -563,54 +525,62 @@ final class TranscriptionStore: ObservableObject {
         }
 
         let role = accessibilityStringAttribute(kAXRoleAttribute, from: element) ?? "unknown role"
+        var valueRef: CFTypeRef?
+        let valueReadError = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef)
+        let currentText = valueRef as? String
+
+        var valueSettable = DarwinBoolean(false)
+        AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable)
+        if valueReadError == .success, let currentText, valueSettable.boolValue {
+            var selectedRange = CFRange(location: currentText.utf16.count, length: 0)
+            var selectedRangeRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selectedRangeRef) == .success,
+               let selectedRangeRef,
+               CFGetTypeID(selectedRangeRef) == AXValueGetTypeID(),
+               AXValueGetType(selectedRangeRef as! AXValue) == .cfRange {
+                AXValueGetValue(selectedRangeRef as! AXValue, .cfRange, &selectedRange)
+            }
+
+            let lowerBound = max(0, min(selectedRange.location, currentText.utf16.count))
+            let upperBound = max(lowerBound, min(selectedRange.location + selectedRange.length, currentText.utf16.count))
+            let start = String.Index(utf16Offset: lowerBound, in: currentText)
+            let end = String.Index(utf16Offset: upperBound, in: currentText)
+
+            var updatedText = currentText
+            updatedText.replaceSubrange(start..<end, with: text)
+            let setValueError = AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, updatedText as CFString)
+            guard setValueError == .success else {
+                return PasteAttemptResult(succeeded: false, detail: "\(role) rejected AXValue error=\(setValueError.rawValue)")
+            }
+
+            var readbackRef: CFTypeRef?
+            let readbackError = AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &readbackRef)
+            guard readbackError == .success, readbackRef as? String == updatedText else {
+                return PasteAttemptResult(succeeded: false, detail: "\(role) AXValue set did not stick readback=\(readbackError.rawValue)")
+            }
+
+            var insertionRange = CFRange(location: lowerBound + text.utf16.count, length: 0)
+            if let insertionValue = AXValueCreate(.cfRange, &insertionRange) {
+                AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, insertionValue)
+            }
+
+            return PasteAttemptResult(succeeded: true, detail: "set value on \(role) at \(lowerBound) replacing \(upperBound - lowerBound)")
+        }
+
         var selectedTextSettable = DarwinBoolean(false)
         AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &selectedTextSettable)
         if selectedTextSettable.boolValue {
             let selectedTextError = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
             if selectedTextError == .success {
-                return PasteAttemptResult(succeeded: true, detail: "set selected text on \(role)")
+                return PasteAttemptResult(succeeded: false, detail: "selected text accepted but AXValue unavailable; falling back")
             }
+            return PasteAttemptResult(succeeded: false, detail: "\(role) selected text rejected error=\(selectedTextError.rawValue)")
         }
 
-        var valueRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef) == .success,
-              let currentText = valueRef as? String
-        else {
-            return PasteAttemptResult(succeeded: false, detail: "\(role) has no writable text value")
+        if valueReadError != .success || currentText == nil {
+            return PasteAttemptResult(succeeded: false, detail: "\(role) value unreadable error=\(valueReadError.rawValue)")
         }
-
-        var valueSettable = DarwinBoolean(false)
-        AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable)
-        guard valueSettable.boolValue else {
-            return PasteAttemptResult(succeeded: false, detail: "\(role) value is not settable")
-        }
-
-        var selectedRange = CFRange(location: currentText.utf16.count, length: 0)
-        var selectedRangeRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selectedRangeRef) == .success,
-           let selectedRangeRef,
-           CFGetTypeID(selectedRangeRef) == AXValueGetTypeID(),
-           AXValueGetType(selectedRangeRef as! AXValue) == .cfRange {
-            AXValueGetValue(selectedRangeRef as! AXValue, .cfRange, &selectedRange)
-        }
-
-        let lowerBound = max(0, min(selectedRange.location, currentText.utf16.count))
-        let upperBound = max(lowerBound, min(selectedRange.location + selectedRange.length, currentText.utf16.count))
-        let start = String.Index(utf16Offset: lowerBound, in: currentText)
-        let end = String.Index(utf16Offset: upperBound, in: currentText)
-
-        var updatedText = currentText
-        updatedText.replaceSubrange(start..<end, with: text)
-        guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, updatedText as CFString) == .success else {
-            return PasteAttemptResult(succeeded: false, detail: "\(role) rejected AXValue")
-        }
-
-        var insertionRange = CFRange(location: lowerBound + text.utf16.count, length: 0)
-        if let insertionValue = AXValueCreate(.cfRange, &insertionRange) {
-            AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, insertionValue)
-        }
-
-        return PasteAttemptResult(succeeded: true, detail: "set value on \(role)")
+        return PasteAttemptResult(succeeded: false, detail: "\(role) value is not settable")
     }
 
     private static func accessibilityStringAttribute(_ attribute: String, from element: AXUIElement) -> String? {

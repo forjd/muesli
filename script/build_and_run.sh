@@ -14,6 +14,10 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 RESOURCE_BUNDLE_NAME="Muesli_Muesli.bundle"
+DEV_CERT_DIR="$ROOT_DIR/.dev-certs"
+DEV_CODESIGN_NAME="Muesli Code Signing Local"
+DEV_CODESIGN_PASSWORD="muesli-local"
+DEV_CODESIGN_KEYCHAIN="$HOME/Library/Keychains/muesli-local.keychain-db"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
@@ -52,7 +56,61 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
-/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
+ensure_local_codesign_identity() {
+  if security find-identity -v -p codesigning "$DEV_CODESIGN_KEYCHAIN" 2>/dev/null | grep -q "$DEV_CODESIGN_NAME"; then
+    return
+  fi
+
+  mkdir -p "$DEV_CERT_DIR"
+  cat >"$DEV_CERT_DIR/openssl-codesign.cnf" <<EOF
+[ req ]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+x509_extensions = codesign_ext
+
+[ dn ]
+CN = $DEV_CODESIGN_NAME
+
+[ codesign_ext ]
+basicConstraints = critical,CA:false
+keyUsage = critical,digitalSignature
+extendedKeyUsage = critical,codeSigning
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always
+EOF
+
+  openssl req -new -newkey rsa:2048 -nodes -x509 -days 3650 \
+    -config "$DEV_CERT_DIR/openssl-codesign.cnf" \
+    -keyout "$DEV_CERT_DIR/muesli-codesign.key" \
+    -out "$DEV_CERT_DIR/muesli-codesign.crt" >/dev/null 2>&1
+  openssl pkcs12 -legacy -export -passout "pass:$DEV_CODESIGN_PASSWORD" \
+    -inkey "$DEV_CERT_DIR/muesli-codesign.key" \
+    -in "$DEV_CERT_DIR/muesli-codesign.crt" \
+    -name "$DEV_CODESIGN_NAME" \
+    -out "$DEV_CERT_DIR/muesli-codesign.p12" >/dev/null 2>&1
+
+  rm -f "$DEV_CODESIGN_KEYCHAIN"
+  security create-keychain -p "$DEV_CODESIGN_PASSWORD" "$DEV_CODESIGN_KEYCHAIN" >/dev/null
+  security unlock-keychain -p "$DEV_CODESIGN_PASSWORD" "$DEV_CODESIGN_KEYCHAIN" >/dev/null
+  security import "$DEV_CERT_DIR/muesli-codesign.p12" \
+    -k "$DEV_CODESIGN_KEYCHAIN" \
+    -P "$DEV_CODESIGN_PASSWORD" \
+    -T /usr/bin/codesign >/dev/null
+  security add-trusted-cert -r trustRoot -p codeSign \
+    -k "$DEV_CODESIGN_KEYCHAIN" \
+    "$DEV_CERT_DIR/muesli-codesign.crt" >/dev/null
+  security set-key-partition-list -S apple-tool:,apple:,codesign: \
+    -s -k "$DEV_CODESIGN_PASSWORD" "$DEV_CODESIGN_KEYCHAIN" >/dev/null
+}
+
+if [[ -n "${MUESLI_CODESIGN_IDENTITY:-}" ]]; then
+  /usr/bin/codesign --force --deep --sign "$MUESLI_CODESIGN_IDENTITY" --timestamp=none "$APP_BUNDLE" >/dev/null
+else
+  ensure_local_codesign_identity
+  /usr/bin/codesign --force --deep --keychain "$DEV_CODESIGN_KEYCHAIN" --sign "$DEV_CODESIGN_NAME" --timestamp=none "$APP_BUNDLE" >/dev/null
+fi
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
