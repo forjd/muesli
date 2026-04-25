@@ -13,6 +13,11 @@ struct SidebarView: View {
                     ForEach(store.sessions) { session in
                         SidebarSessionRow(session: session)
                             .tag(session.id)
+                            .contextMenu {
+                                Button("Delete", systemImage: "trash", role: .destructive) {
+                                    store.deleteSession(sessionID: session.id)
+                                }
+                            }
                     }
                 }
             }

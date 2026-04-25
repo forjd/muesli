@@ -113,6 +113,10 @@ private struct TranscriptDetail: View {
                         }
                     }
 
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        store.deleteSession(sessionID: session.id)
+                    }
+
                     Button("Copy", systemImage: "doc.on.doc") {
                         store.copyTranscript(sessionID: session.id)
                     }

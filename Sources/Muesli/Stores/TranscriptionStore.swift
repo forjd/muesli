@@ -343,6 +343,21 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func deleteSession(sessionID: TranscriptSession.ID) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let session = sessions.remove(at: index)
+        deleteFiles(for: session)
+        liveChunkStats[sessionID] = nil
+        failedLiveChunks[sessionID] = nil
+
+        if selectedSessionID == sessionID {
+            selectedSessionID = sessions.first?.id
+        }
+
+        statusMessage = "Deleted recording."
+        scheduleSave()
+    }
+
     private func startMetering() {
         meterTask?.cancel()
         meterTask = Task { [weak self] in
@@ -375,6 +390,17 @@ final class TranscriptionStore: ObservableObject {
             try? await Task.sleep(for: .milliseconds(250))
             try? persistence.save(sessions)
         }
+    }
+
+    private func deleteFiles(for session: TranscriptSession) {
+        let fileManager = FileManager.default
+        try? fileManager.removeItem(at: session.audioURL)
+
+        let chunkDirectory = session.audioURL
+            .deletingLastPathComponent()
+            .appending(path: "Chunks", directoryHint: .isDirectory)
+            .appending(path: session.audioURL.deletingPathExtension().lastPathComponent, directoryHint: .isDirectory)
+        try? fileManager.removeItem(at: chunkDirectory)
     }
 
     private func exportFilename(for session: TranscriptSession, format: TranscriptExportFormat) -> String {
