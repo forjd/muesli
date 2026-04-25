@@ -440,6 +440,14 @@ final class TranscriptionStore: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
 
+        guard AXIsProcessTrustedWithOptions([
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+        ] as CFDictionary) else {
+            dictationTargetApp = nil
+            statusMessage = "Copied transcript. Enable Accessibility permission for auto-paste."
+            return
+        }
+
         let target = dictationTargetApp
         dictationTargetApp = nil
         target?.activate()
@@ -454,7 +462,7 @@ final class TranscriptionStore: ObservableObject {
             keyUp?.post(tap: .cghidEventTap)
         }
 
-        statusMessage = "Pasted transcript."
+        statusMessage = "Copied transcript and sent paste."
     }
 
     func updateTranscript(sessionID: TranscriptSession.ID, text: String) {
