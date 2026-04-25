@@ -124,6 +124,22 @@ version, and set `MUESLI_CODESIGN_IDENTITY` to sign with a distribution identity
 Without `MUESLI_CODESIGN_IDENTITY`, the archive is signed with Muesli's local
 development identity and is not notarized.
 
+## GitHub Releases
+
+Releases are automated by GitHub Actions. To publish a new release:
+
+```bash
+git tag -a v0.1.1 -m "Muesli 0.1.1"
+git push origin v0.1.1
+```
+
+The `Release` workflow runs tests, builds the signed macOS archive, uploads the
+zip and SHA-256 file as workflow artifacts, and creates the GitHub release.
+
+You can also run the workflow manually from GitHub Actions with a version number.
+Manual runs can either build artifacts only or publish a release for the current
+commit.
+
 ## Model Cache
 
 FluidAudio manages the Parakeet model cache. Muesli checks whether the selected

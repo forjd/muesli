@@ -1,0 +1,111 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, without the v prefix"
+        required: true
+        type: string
+      publish_release:
+        description: "Create a GitHub release for this version"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build macOS release
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+            publish_release="true"
+          else
+            version="${{ inputs.version }}"
+            publish_release="${{ inputs.publish_release }}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Version must look like 0.1.1, 1.0.0-beta.1, or similar." >&2
+            exit 2
+          fi
+
+          echo "MUESLI_VERSION=$version" >> "$GITHUB_ENV"
+          echo "MUESLI_TAG=v$version" >> "$GITHUB_ENV"
+          echo "MUESLI_PUBLISH_RELEASE=$publish_release" >> "$GITHUB_ENV"
+          echo "MUESLI_ARCHIVE=dist/release/Muesli-$version-macOS.zip" >> "$GITHUB_ENV"
+          echo "MUESLI_NOTES=dist/release/Muesli-$version-release-notes.md" >> "$GITHUB_ENV"
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build
+            ~/Library/Caches/org.swift.swiftpm
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Run tests
+        run: swift run MuesliTests
+
+      - name: Package release
+        run: ./script/package_release.sh
+
+      - name: Check archive digest
+        shell: bash
+        run: |
+          set -euo pipefail
+          shasum -a 256 "$MUESLI_ARCHIVE" | tee "dist/release/Muesli-$MUESLI_VERSION-macOS.zip.sha256"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Muesli-${{ env.MUESLI_VERSION }}-macOS
+          path: |
+            ${{ env.MUESLI_ARCHIVE }}
+            ${{ env.MUESLI_NOTES }}
+            dist/release/Muesli-${{ env.MUESLI_VERSION }}-macOS.zip.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: env.MUESLI_PUBLISH_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "$MUESLI_TAG" >/dev/null 2>&1; then
+            echo "Release $MUESLI_TAG already exists; uploading current archive."
+            gh release upload "$MUESLI_TAG" \
+              "$MUESLI_ARCHIVE" \
+              "dist/release/Muesli-$MUESLI_VERSION-macOS.zip.sha256" \
+              --clobber
+          else
+            gh release create "$MUESLI_TAG" \
+              "$MUESLI_ARCHIVE" \
+              "dist/release/Muesli-$MUESLI_VERSION-macOS.zip.sha256" \
+              --target "$GITHUB_SHA" \
+              --title "Muesli $MUESLI_VERSION" \
+              --notes-file "$MUESLI_NOTES"
+          fi
