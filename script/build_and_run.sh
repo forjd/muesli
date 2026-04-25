@@ -11,8 +11,10 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
+ICON_FILE="$ROOT_DIR/Resources/Muesli.icns"
 RESOURCE_BUNDLE_NAME="Muesli_Muesli.bundle"
 DEV_CERT_DIR="$ROOT_DIR/.dev-certs"
 DEV_CODESIGN_NAME="Muesli Code Signing Local"
@@ -25,13 +27,16 @@ swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
 
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 if [[ ! -f "$APP_BINARY" ]] || ! cmp -s "$BUILD_BINARY" "$APP_BINARY"; then
   cp "$BUILD_BINARY" "$APP_BINARY"
 fi
 chmod +x "$APP_BINARY"
 
 rm -rf "$APP_BUNDLE/$RESOURCE_BUNDLE_NAME"
+if [[ -f "$ICON_FILE" ]]; then
+  cp "$ICON_FILE" "$APP_RESOURCES/Muesli.icns"
+fi
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -44,6 +49,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$BUNDLE_ID</string>
   <key>CFBundleName</key>
   <string>$APP_NAME</string>
+  <key>CFBundleIconFile</key>
+  <string>Muesli.icns</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>LSMinimumSystemVersion</key>

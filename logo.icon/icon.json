@@ -1,0 +1,32 @@
+{
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.96783,0.76875,0.58464,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.96783,0.92717,0.73989,1.00000"
+          },
+          "image-name" : "mic-svgrepo-com.svg",
+          "name" : "mic-svgrepo-com"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

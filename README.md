@@ -120,6 +120,9 @@ Sources/Muesli/Models/           Recording, transcript, benchmark models
 Sources/Muesli/Services/         Audio recording, Parakeet, transcript helpers
 Sources/Muesli/Stores/           App state, persistence, exports, paste flow
 Sources/Muesli/Views/            SwiftUI interface
+Resources/Muesli.icns            App icon used by the local app bundle
+logo.icon/                       Source icon package
+logo Exports/                    Exported PNG source artwork
 script/build_and_run.sh          Build, sign, launch, and telemetry helper
 ```
 
