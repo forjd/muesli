@@ -131,7 +131,12 @@ private actor FluidAudioBackend {
         if let cachedModels, cachedModels.version == version {
             models = cachedModels
         } else {
-            models = try await AsrModels.downloadAndLoad(version: version)
+            let cacheDirectory = AsrModels.defaultCacheDirectory(for: version)
+            if AsrModels.modelsExist(at: cacheDirectory, version: version) {
+                models = try await AsrModels.loadFromCache(version: version)
+            } else {
+                models = try await AsrModels.downloadAndLoad(version: version)
+            }
             cachedModels = models
         }
 
