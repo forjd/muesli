@@ -3,6 +3,10 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var store: TranscriptionStore
     @SceneStorage("selectedSessionID") private var selectedSessionIDString: String?
+    @AppStorage("hasSeenPermissionsOnboarding") private var hasSeenPermissionsOnboarding = false
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var permissions = PermissionManager()
+    @State private var isShowingPermissions = false
 
     var body: some View {
         NavigationSplitView {
@@ -37,13 +41,43 @@ struct ContentView: View {
                 .disabled(store.latestRecordingURL == nil || store.isBusy)
                 .keyboardShortcut("t", modifiers: [.command])
             }
+
+            ToolbarItem {
+                Button {
+                    permissions.refresh()
+                    isShowingPermissions = true
+                } label: {
+                    Label("Permissions", systemImage: permissions.needsAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                }
+                .help("Review microphone and Accessibility permissions")
+            }
         }
         .onChange(of: store.selectedSessionID) { _, newValue in
             selectedSessionIDString = newValue?.uuidString
         }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                permissions.refresh()
+            }
+        }
         .onAppear {
+            permissions.refresh()
+            if !hasSeenPermissionsOnboarding {
+                isShowingPermissions = true
+            }
+
             if let selectedSessionIDString, let id = UUID(uuidString: selectedSessionIDString) {
                 store.selectedSessionID = id
+            }
+        }
+        .sheet(isPresented: $isShowingPermissions) {
+            PermissionsView(
+                permissions: permissions,
+                isFirstRun: !hasSeenPermissionsOnboarding
+            ) {
+                hasSeenPermissionsOnboarding = true
+                permissions.refresh()
+                isShowingPermissions = false
             }
         }
         .task {
