@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: TranscriptionStore
     @StateObject private var hotKeyRecorder = HotKeyRecorder()
+    @State private var isShowingDeleteAllConfirmation = false
 
     var body: some View {
         Form {
@@ -70,6 +71,13 @@ struct SettingsView: View {
                 Text("Deleting raw audio keeps saved transcripts but removes the original recording file after successful transcription.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+
+                Divider()
+
+                Button("Delete All Recordings and Transcripts", systemImage: "trash", role: .destructive) {
+                    isShowingDeleteAllConfirmation = true
+                }
+                .disabled(store.sessions.isEmpty && !store.isRecording)
             }
 
             Section("Hotkey") {
@@ -125,6 +133,17 @@ struct SettingsView: View {
         .frame(width: 620)
         .onDisappear {
             hotKeyRecorder.stop()
+        }
+        .confirmationDialog(
+            "Delete all recordings and transcripts?",
+            isPresented: $isShowingDeleteAllConfirmation
+        ) {
+            Button("Delete All", role: .destructive) {
+                store.deleteAllSessions()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every saved recording, transcript, benchmark, and live chunk from Muesli. This cannot be undone.")
         }
     }
 }

@@ -59,7 +59,7 @@ final class TranscriptionStore: ObservableObject {
             }
         }
     }
-    @Published var dictationHotKeyMode: DictationHotKeyMode = .toggle {
+    @Published var dictationHotKeyMode: DictationHotKeyMode = .hybrid {
         didSet {
             UserDefaults.standard.set(dictationHotKeyMode.rawValue, forKey: PreferenceKey.dictationHotKeyMode)
         }
@@ -814,6 +814,32 @@ final class TranscriptionStore: ObservableObject {
         }
 
         statusMessage = "Deleted recording."
+        scheduleSave()
+    }
+
+    func deleteAllSessions() {
+        if isRecording {
+            recorder.stop()
+            liveChunkQueue?.cancel()
+            liveChunkQueue = nil
+            meterTask?.cancel()
+            elapsedTask?.cancel()
+            currentAudioLevel = -80
+            recordingElapsed = 0
+            isRecording = false
+            activeRecordingURL = nil
+            activeSessionID = nil
+        }
+
+        sessions.forEach(deleteFiles)
+        sessions.removeAll()
+        selectedSessionID = nil
+        liveChunkStats.removeAll()
+        failedLiveChunks.removeAll()
+        dictationTargetApp = nil
+        dictationTargetElement = nil
+        dictationTargetBundleIdentifier = nil
+        statusMessage = "Deleted all recordings and transcripts."
         scheduleSave()
     }
 
