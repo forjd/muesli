@@ -31,6 +31,8 @@ struct ContentView: View {
                 } label: {
                     Label(store.isRecording ? "Stop" : "Record", systemImage: store.isRecording ? "stop.fill" : "mic.fill")
                 }
+                .labelStyle(.iconOnly)
+                .help(store.isRecording ? "Stop recording" : "Start recording")
                 .keyboardShortcut("r", modifiers: [.command])
 
                 Button {
@@ -38,6 +40,8 @@ struct ContentView: View {
                 } label: {
                     Label("Transcribe", systemImage: "text.bubble.fill")
                 }
+                .labelStyle(.iconOnly)
+                .help("Transcribe latest recording")
                 .disabled(store.latestRecordingURL == nil || store.isBusy)
                 .keyboardShortcut("t", modifiers: [.command])
             }
@@ -49,6 +53,7 @@ struct ContentView: View {
                 } label: {
                     Label("Permissions", systemImage: permissions.needsAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
                 }
+                .labelStyle(.iconOnly)
                 .help("Review microphone and Accessibility permissions")
             }
 
@@ -56,6 +61,7 @@ struct ContentView: View {
                 SettingsLink {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .labelStyle(.iconOnly)
                 .help("Open Muesli settings")
             }
         }

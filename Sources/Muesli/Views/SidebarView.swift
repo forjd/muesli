@@ -7,8 +7,13 @@ struct SidebarView: View {
         List(selection: $store.selectedSessionID) {
             Section("Recordings") {
                 if store.sessions.isEmpty {
-                    Text("No recordings")
-                        .foregroundStyle(.secondary)
+                    ContentUnavailableView {
+                        Label("No Recordings", systemImage: "waveform")
+                    } description: {
+                        Text("Recorded clips will appear here.")
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 18)
                 } else {
                     ForEach(store.sessions) { session in
                         SidebarSessionRow(session: session)

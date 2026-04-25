@@ -6,8 +6,8 @@ struct DetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             RecorderHeaderView(store: store)
-                .padding(.horizontal, 28)
-                .padding(.vertical, 18)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 16)
                 .background(.bar)
 
             Divider()
@@ -15,9 +15,10 @@ struct DetailView: View {
             if let session = store.selectedSession {
                 TranscriptDetail(session: session, store: store)
             } else {
-                ContentUnavailableView("Start Recording", systemImage: "mic", description: Text("Record a clip to create a transcription session."))
+                EmptyRecordingView(store: store)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
@@ -25,35 +26,42 @@ private struct RecorderHeaderView: View {
     @ObservedObject var store: TranscriptionStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 18) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text("Muesli")
                         .font(.system(.title2, design: .rounded, weight: .semibold))
                     Text(store.statusMessage)
+                        .font(.callout)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
 
                 Spacer()
-
-                AudioLevelMeter(level: store.currentAudioLevel)
-                    .frame(width: 220)
 
                 ModelLoadBadge(state: store.modelLoadState)
 
                 TranscriberHealthMenu(store: store)
             }
 
-            HStack(spacing: 10) {
-                Image(systemName: "cpu")
-                    .foregroundStyle(.secondary)
-                Text(store.selectedModel.label)
-                    .fontWeight(.medium)
-                Text(store.selectedModel.detail)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            HStack(alignment: .center, spacing: 14) {
+                Label {
+                    HStack(spacing: 8) {
+                        Text(store.selectedModel.label)
+                            .fontWeight(.semibold)
+                        Text(store.selectedModel.detail)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                } icon: {
+                    Image(systemName: "cpu")
+                        .foregroundStyle(.secondary)
+                }
+
                 Spacer()
+
+                AudioLevelMeter(level: store.currentAudioLevel)
+                    .frame(width: 240)
 
                 if store.isRecording {
                     Label(formatElapsed(store.recordingElapsed), systemImage: "timer")
@@ -85,18 +93,13 @@ private struct ModelLoadBadge: View {
                     .foregroundStyle(color)
             }
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(state.label)
-                    .font(.caption.weight(.semibold))
-                Text(state.detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Text(state.label)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: Capsule())
         .help(state.detail)
     }
 
@@ -128,6 +131,50 @@ private struct ModelLoadBadge: View {
         case .failed:
             .orange
         }
+    }
+}
+
+private struct EmptyRecordingView: View {
+    @ObservedObject var store: TranscriptionStore
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: store.isRecording ? "waveform.circle.fill" : "mic.circle")
+                .font(.system(size: 64, weight: .light))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(store.isRecording ? .red : .secondary)
+
+            VStack(spacing: 6) {
+                Text(store.isRecording ? "Recording" : "Start Recording")
+                    .font(.system(.largeTitle, design: .rounded, weight: .semibold))
+
+                Text(store.isRecording ? "Speak naturally. Stop recording to create a transcript." : "Record a clip to create a transcription session.")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await store.toggleRecording() }
+                } label: {
+                    Label(store.isRecording ? "Stop Recording" : "Record", systemImage: store.isRecording ? "stop.fill" : "mic.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Button {
+                    Task { await store.toggleDictationPaste() }
+                } label: {
+                    Label("Dictate", systemImage: "keyboard")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(store.isBusy)
+            }
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
