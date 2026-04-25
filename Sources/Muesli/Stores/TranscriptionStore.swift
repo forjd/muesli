@@ -28,6 +28,7 @@ final class TranscriptionStore: ObservableObject {
 
     init() {
         sessions = persistence.load()
+        normalizeInterruptedSessions()
         selectedSessionID = sessions.first?.id
     }
 
@@ -129,8 +130,7 @@ final class TranscriptionStore: ObservableObject {
     }
 
     func transcribe(sessionID: TranscriptSession.ID) async {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }),
-              sessions[index].status == .recording else {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else {
             return
         }
 
@@ -162,6 +162,19 @@ final class TranscriptionStore: ObservableObject {
 
         isBusy = false
         scheduleSave()
+    }
+
+    private func normalizeInterruptedSessions() {
+        var changed = false
+        for index in sessions.indices where sessions[index].status == .recording || sessions[index].status == .finalizing || sessions[index].status == .transcribing {
+            sessions[index].status = .recorded
+            sessions[index].errorMessage = nil
+            changed = true
+        }
+
+        if changed {
+            scheduleSave()
+        }
     }
 
     private func handleLiveChunk(_ chunk: RecordingChunk) {
