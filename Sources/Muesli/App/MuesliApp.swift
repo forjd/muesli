@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Combine
 import SwiftUI
 
 @main
@@ -31,7 +32,7 @@ struct MuesliApp: App {
                 Button("Toggle Dictation Paste") {
                     Task { await store.toggleDictationPaste() }
                 }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .keyboardShortcut(store.dictationHotKey.keyEquivalent, modifiers: store.dictationHotKey.eventModifiers)
             }
         }
 
@@ -41,22 +42,31 @@ struct MuesliApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var store: TranscriptionStore?
     private var statusItem: NSStatusItem?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
+    private var hotKeyCancellable: AnyCancellable?
     private let dictationHotKeyID = EventHotKeyID(signature: OSType("MUSL".fourCharCode), id: 1)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        installGlobalHotKey()
+        installGlobalHotKeyHandler()
         installStatusItem()
     }
 
     func configure(store: TranscriptionStore) {
         self.store = store
+        registerGlobalHotKey(store.dictationHotKey)
+        hotKeyCancellable = store.$dictationHotKey
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] hotKey in
+                self?.registerGlobalHotKey(hotKey)
+            }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -68,7 +78,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func installGlobalHotKey() {
+    private func installGlobalHotKeyHandler() {
+        guard hotKeyHandler == nil else { return }
+
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let selfPointer = Unmanaged.passUnretained(self).toOpaque()
 
@@ -97,10 +109,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             selfPointer,
             &hotKeyHandler
         )
+    }
+
+    private func registerGlobalHotKey(_ hotKey: DictationHotKey) {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
 
         let status = RegisterEventHotKey(
-            UInt32(kVK_ANSI_D),
-            UInt32(cmdKey | shiftKey),
+            hotKey.keyCode,
+            hotKey.carbonModifiers,
             dictationHotKeyID,
             GetApplicationEventTarget(),
             0,
@@ -109,7 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if status != noErr {
             Task { @MainActor [weak self] in
-                self?.store?.statusMessage = "Could not register Command-Shift-D hotkey."
+                self?.store?.statusMessage = "Could not register \(hotKey.label) hotkey."
             }
         }
     }

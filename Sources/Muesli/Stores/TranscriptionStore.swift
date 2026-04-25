@@ -12,6 +12,7 @@ final class TranscriptionStore: ObservableObject {
         static let autoPasteDictation = "autoPasteDictation"
         static let pasteDelay = "pasteDelay"
         static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
+        static let dictationHotKey = "dictationHotKey"
     }
 
     private static let pasteLogger = Logger(
@@ -51,6 +52,11 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(deleteAudioAfterTranscription, forKey: PreferenceKey.deleteAudioAfterTranscription)
         }
     }
+    @Published var dictationHotKey: DictationHotKey = .commandShiftD {
+        didSet {
+            UserDefaults.standard.set(dictationHotKey.rawValue, forKey: PreferenceKey.dictationHotKey)
+        }
+    }
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
@@ -81,6 +87,10 @@ final class TranscriptionStore: ObservableObject {
         }
         if defaults.object(forKey: PreferenceKey.deleteAudioAfterTranscription) != nil {
             deleteAudioAfterTranscription = defaults.bool(forKey: PreferenceKey.deleteAudioAfterTranscription)
+        }
+        if let hotKeyRawValue = defaults.string(forKey: PreferenceKey.dictationHotKey),
+           let hotKey = DictationHotKey(rawValue: hotKeyRawValue) {
+            dictationHotKey = hotKey
         }
 
         sessions = persistence.load()
@@ -211,7 +221,7 @@ final class TranscriptionStore: ObservableObject {
             Self.pasteLogger.info("Dictation hotkey start target=\(targetName, privacy: .public) bundle=\(targetBundle, privacy: .public) axElement=\(elementSummary, privacy: .public)")
             await startRecording()
             if isRecording {
-                statusMessage = "Dictation recording; press Command-Shift-D to paste."
+                statusMessage = "Dictation recording; press \(dictationHotKey.label) to paste."
             }
         }
     }

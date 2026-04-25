@@ -70,12 +70,13 @@ struct SettingsView: View {
             }
 
             Section("Hotkey") {
-                LabeledContent("Dictation paste") {
-                    Text("Command-Shift-D")
-                        .foregroundStyle(.secondary)
+                Picker("Dictation paste", selection: $store.dictationHotKey) {
+                    ForEach(DictationHotKey.allCases) { hotKey in
+                        Text(hotKey.label).tag(hotKey)
+                    }
                 }
 
-                Text("Shortcut customization is not available yet.")
+                Text("Changing this shortcut re-registers the global dictation hotkey immediately.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
