@@ -110,7 +110,7 @@ private struct TranscriptDetail: View {
     @ObservedObject var store: TranscriptionStore
 
     var body: some View {
-        ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 16) {
                 RecordingSummary(session: session, stats: store.liveChunkStats[session.id])
 
@@ -129,14 +129,15 @@ private struct TranscriptDetail: View {
                 if !session.benchmarks.isEmpty {
                     BenchmarkView(benchmarks: session.benchmarks)
                 }
-
-                TranscriptTextView(session: session)
             }
-            .padding(.horizontal, 32)
-            .padding(.vertical, 28)
-            .frame(maxWidth: 980, alignment: .leading)
+
+            TranscriptTextView(session: session)
+                .layoutPriority(1)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 28)
+        .frame(maxWidth: 980, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -183,6 +184,14 @@ private struct RecordingActionBar: View {
     @ObservedObject var store: TranscriptionStore
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            fullLayout
+            compactLayout
+        }
+        .buttonStyle(.bordered)
+    }
+
+    private var fullLayout: some View {
         HStack(spacing: 10) {
             if let stats = store.liveChunkStats[session.id], stats.failed > 0 {
                 Button("Retry", systemImage: "arrow.clockwise") {
@@ -228,7 +237,52 @@ private struct RecordingActionBar: View {
                 store.deleteSession(sessionID: session.id)
             }
         }
-        .buttonStyle(.bordered)
+    }
+
+    private var compactLayout: some View {
+        HStack(spacing: 10) {
+            Button("Benchmark", systemImage: "speedometer") {
+                Task { await store.benchmark(sessionID: session.id) }
+            }
+            .disabled(store.isBusy || store.isRecording)
+
+            Button("Transcribe", systemImage: "text.bubble") {
+                Task { await store.transcribe(sessionID: session.id) }
+            }
+            .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
+
+            Spacer()
+
+            Menu {
+                Button("Copy", systemImage: "doc.on.doc") {
+                    store.copyTranscript(sessionID: session.id)
+                }
+                .disabled(session.displayTranscript.isEmpty)
+
+                Button("Export Text") {
+                    store.exportTranscript(sessionID: session.id, format: .text)
+                }
+                .disabled(session.displayTranscript.isEmpty)
+
+                Button("Export JSON") {
+                    store.exportTranscript(sessionID: session.id, format: .json)
+                }
+                .disabled(session.displayTranscript.isEmpty)
+
+                Button("Export SRT") {
+                    store.exportTranscript(sessionID: session.id, format: .srt)
+                }
+                .disabled(session.displayTranscript.isEmpty)
+
+                Divider()
+
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    store.deleteSession(sessionID: session.id)
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+        }
     }
 }
 
@@ -320,7 +374,7 @@ private struct TranscriptTextView: View {
                 )
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 
@@ -340,14 +394,20 @@ private struct TranscriptBlock: View {
                 Spacer()
             }
 
-            Text(text)
-                .font(.system(.body, design: .serif))
-                .lineSpacing(7)
-                .foregroundStyle(isPlaceholder ? .secondary : .primary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+            ScrollView {
+                Text(text)
+                    .font(.system(.body, design: .serif))
+                    .lineSpacing(7)
+                    .foregroundStyle(isPlaceholder ? .secondary : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.trailing, 8)
+            }
+            .scrollIndicators(.automatic)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
         .overlay {
             RoundedRectangle(cornerRadius: 8)
