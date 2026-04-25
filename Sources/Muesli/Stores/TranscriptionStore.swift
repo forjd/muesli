@@ -996,4 +996,13 @@ enum ModelLoadState: Hashable {
             false
         }
     }
+
+    var isReady: Bool {
+        switch self {
+        case .ready:
+            true
+        default:
+            false
+        }
+    }
 }

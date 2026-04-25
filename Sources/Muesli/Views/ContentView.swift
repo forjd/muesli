@@ -3,10 +3,10 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var store: TranscriptionStore
     @SceneStorage("selectedSessionID") private var selectedSessionIDString: String?
-    @AppStorage("hasSeenPermissionsOnboarding") private var hasSeenPermissionsOnboarding = false
+    @AppStorage("hasSeenReadinessCheck") private var hasSeenReadinessCheck = false
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var permissions = PermissionManager()
-    @State private var isShowingPermissions = false
+    @State private var isShowingReadinessCheck = false
 
     var body: some View {
         NavigationSplitView {
@@ -49,12 +49,12 @@ struct ContentView: View {
             ToolbarItem {
                 Button {
                     permissions.refresh()
-                    isShowingPermissions = true
+                    isShowingReadinessCheck = true
                 } label: {
-                    Label("Permissions", systemImage: permissions.needsAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+                    Label("Readiness", systemImage: readinessNeedsAttention ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
                 }
                 .labelStyle(.iconOnly)
-                .help("Review microphone and Accessibility permissions")
+                .help("Review app readiness")
             }
 
             ToolbarItem {
@@ -75,27 +75,32 @@ struct ContentView: View {
         }
         .onAppear {
             permissions.refresh()
-            if !hasSeenPermissionsOnboarding {
-                isShowingPermissions = true
+            if !hasSeenReadinessCheck {
+                isShowingReadinessCheck = true
             }
 
             if let selectedSessionIDString, let id = UUID(uuidString: selectedSessionIDString) {
                 store.selectedSessionID = id
             }
         }
-        .sheet(isPresented: $isShowingPermissions) {
-            PermissionsView(
+        .sheet(isPresented: $isShowingReadinessCheck) {
+            ReadinessCheckView(
+                store: store,
                 permissions: permissions,
-                isFirstRun: !hasSeenPermissionsOnboarding
+                isFirstRun: !hasSeenReadinessCheck
             ) {
-                hasSeenPermissionsOnboarding = true
+                hasSeenReadinessCheck = true
                 permissions.refresh()
-                isShowingPermissions = false
+                isShowingReadinessCheck = false
             }
         }
         .task {
             await store.prepareTranscriber()
             store.refreshTranscriberHealth()
         }
+    }
+
+    private var readinessNeedsAttention: Bool {
+        permissions.needsAttention || !store.modelLoadState.isReady
     }
 }
