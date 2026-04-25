@@ -31,7 +31,7 @@ struct SessionPersistence {
         do {
             return try decoder.decode([TranscriptSession].self, from: data).map { session in
                 var session = session
-                if session.status == .transcribing {
+                if session.status == .transcribing || session.status == .recording {
                     session.status = .recorded
                     session.errorMessage = nil
                 }

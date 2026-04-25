@@ -44,6 +44,8 @@ private struct SidebarSessionRow: View {
 
     private var iconName: String {
         switch session.status {
+        case .recording:
+            "mic.fill"
         case .recorded:
             "waveform"
         case .transcribing:
@@ -57,6 +59,8 @@ private struct SidebarSessionRow: View {
 
     private var iconColor: Color {
         switch session.status {
+        case .recording:
+            .red
         case .recorded, .transcribing:
             .secondary
         case .complete:

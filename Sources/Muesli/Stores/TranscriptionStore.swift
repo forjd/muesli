@@ -17,8 +17,10 @@ final class TranscriptionStore: ObservableObject {
     private let transcriber = ParakeetTranscriber()
     private let persistence = SessionPersistence()
     private var activeRecordingURL: URL?
+    private var activeSessionID: TranscriptSession.ID?
     private var meterTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    private var liveChunkTasks: [Task<Void, Never>] = []
 
     init() {
         sessions = persistence.load()
@@ -54,10 +56,19 @@ final class TranscriptionStore: ObservableObject {
         }
 
         do {
-            let url = try recorder.start()
+            let url = try recorder.start(chunkDuration: 4) { [weak self] chunk in
+                Task { @MainActor [weak self] in
+                    self?.handleLiveChunk(chunk)
+                }
+            }
+            let session = TranscriptSession(audioURL: url, model: selectedModel, status: .recording)
+            sessions.insert(session, at: 0)
+            selectedSessionID = session.id
+            activeSessionID = session.id
             activeRecordingURL = url
             isRecording = true
             statusMessage = "Recording..."
+            scheduleSave()
             startMetering()
         } catch {
             statusMessage = error.localizedDescription
@@ -68,21 +79,26 @@ final class TranscriptionStore: ObservableObject {
     func stopRecording() -> TranscriptSession.ID? {
         guard isRecording else { return nil }
         recorder.stop()
+        liveChunkTasks.forEach { $0.cancel() }
+        liveChunkTasks.removeAll()
         meterTask?.cancel()
         currentAudioLevel = -80
         isRecording = false
 
-        if let activeRecordingURL {
-            let session = TranscriptSession(audioURL: activeRecordingURL, model: selectedModel)
-            sessions.insert(session, at: 0)
-            selectedSessionID = session.id
+        if let activeSessionID, sessions.contains(where: { $0.id == activeSessionID }) {
             statusMessage = "Recording saved."
             self.activeRecordingURL = nil
+            self.activeSessionID = nil
+            if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
+               sessions[index].status == .recording {
+                sessions[index].status = .recorded
+            }
             scheduleSave()
-            return session.id
+            return activeSessionID
         }
 
         activeRecordingURL = nil
+        activeSessionID = nil
         return nil
     }
 
@@ -106,7 +122,10 @@ final class TranscriptionStore: ObservableObject {
     }
 
     func transcribe(sessionID: TranscriptSession.ID) async {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }),
+              sessions[index].status == .recording else {
+            return
+        }
 
         isBusy = true
         selectedSessionID = sessionID
@@ -135,6 +154,51 @@ final class TranscriptionStore: ObservableObject {
         }
 
         isBusy = false
+        scheduleSave()
+    }
+
+    private func handleLiveChunk(_ chunk: RecordingChunk) {
+        guard isRecording, let activeSessionID else { return }
+
+        let model = selectedModel
+        statusMessage = "Transcribing chunk \(chunk.index)..."
+        let task = Task { [weak self] in
+            guard let self else { return }
+
+            do {
+                let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: model)
+                await MainActor.run {
+                    self.appendLiveTranscript(
+                        result.text,
+                        sessionID: activeSessionID,
+                        chunkIndex: chunk.index
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    self.statusMessage = "Chunk \(chunk.index) failed: \(error.localizedDescription)"
+                }
+            }
+        }
+        liveChunkTasks.append(task)
+    }
+
+    private func appendLiveTranscript(_ text: String, sessionID: TranscriptSession.ID, chunkIndex: Int) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            if sessions[index].transcript.isEmpty {
+                sessions[index].transcript = trimmed
+            } else {
+                sessions[index].transcript += " " + trimmed
+            }
+        }
+
+        if isRecording, sessionID == activeSessionID {
+            statusMessage = "Live transcript updated from chunk \(chunkIndex)."
+        }
+
         scheduleSave()
     }
 
