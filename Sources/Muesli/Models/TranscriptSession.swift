@@ -10,6 +10,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
     var liveTranscript: String
     var finalTranscript: String
     var segments: [TranscriptSegment]
+    var benchmarks: [TranscriptionBenchmark]
     var errorMessage: String?
 
     init(
@@ -22,6 +23,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         liveTranscript: String = "",
         finalTranscript: String = "",
         segments: [TranscriptSegment] = [],
+        benchmarks: [TranscriptionBenchmark] = [],
         errorMessage: String? = nil
     ) {
         self.id = id
@@ -33,6 +35,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         self.liveTranscript = liveTranscript
         self.finalTranscript = finalTranscript
         self.segments = segments
+        self.benchmarks = benchmarks
         self.errorMessage = errorMessage
     }
 
@@ -56,6 +59,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         case liveTranscript
         case finalTranscript
         case segments
+        case benchmarks
         case errorMessage
     }
 
@@ -70,7 +74,30 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         liveTranscript = try container.decodeIfPresent(String.self, forKey: .liveTranscript) ?? transcript
         finalTranscript = try container.decodeIfPresent(String.self, forKey: .finalTranscript) ?? ""
         segments = try container.decodeIfPresent([TranscriptSegment].self, forKey: .segments) ?? []
+        benchmarks = try container.decodeIfPresent([TranscriptionBenchmark].self, forKey: .benchmarks) ?? []
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+    }
+}
+
+struct TranscriptionBenchmark: Identifiable, Hashable, Codable {
+    let id: UUID
+    let model: ParakeetModel
+    let duration: TimeInterval
+    let transcriptLength: Int
+    let createdAt: Date
+
+    init(
+        id: UUID = UUID(),
+        model: ParakeetModel,
+        duration: TimeInterval,
+        transcriptLength: Int,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.model = model
+        self.duration = duration
+        self.transcriptLength = transcriptLength
+        self.createdAt = createdAt
     }
 }
 
