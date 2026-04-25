@@ -7,6 +7,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
     var model: ParakeetModel
     var status: TranscriptStatus
     var transcript: String
+    var liveTranscript: String
+    var finalTranscript: String
+    var segments: [TranscriptSegment]
     var errorMessage: String?
 
     init(
@@ -16,6 +19,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         model: ParakeetModel,
         status: TranscriptStatus = .recorded,
         transcript: String = "",
+        liveTranscript: String = "",
+        finalTranscript: String = "",
+        segments: [TranscriptSegment] = [],
         errorMessage: String? = nil
     ) {
         self.id = id
@@ -24,8 +30,78 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         self.model = model
         self.status = status
         self.transcript = transcript
+        self.liveTranscript = liveTranscript
+        self.finalTranscript = finalTranscript
+        self.segments = segments
         self.errorMessage = errorMessage
     }
+
+    var displayTranscript: String {
+        if !finalTranscript.isEmpty {
+            return finalTranscript
+        }
+        if !liveTranscript.isEmpty {
+            return liveTranscript
+        }
+        return transcript
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt
+        case audioURL
+        case model
+        case status
+        case transcript
+        case liveTranscript
+        case finalTranscript
+        case segments
+        case errorMessage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        audioURL = try container.decode(URL.self, forKey: .audioURL)
+        model = try container.decode(ParakeetModel.self, forKey: .model)
+        status = try container.decode(TranscriptStatus.self, forKey: .status)
+        transcript = try container.decodeIfPresent(String.self, forKey: .transcript) ?? ""
+        liveTranscript = try container.decodeIfPresent(String.self, forKey: .liveTranscript) ?? transcript
+        finalTranscript = try container.decodeIfPresent(String.self, forKey: .finalTranscript) ?? ""
+        segments = try container.decodeIfPresent([TranscriptSegment].self, forKey: .segments) ?? []
+        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+    }
+}
+
+struct TranscriptSegment: Identifiable, Hashable, Codable {
+    let id: UUID
+    let chunkIndex: Int
+    let startTime: TimeInterval
+    let endTime: TimeInterval
+    var text: String
+    var source: TranscriptSegmentSource
+
+    init(
+        id: UUID = UUID(),
+        chunkIndex: Int,
+        startTime: TimeInterval,
+        endTime: TimeInterval,
+        text: String,
+        source: TranscriptSegmentSource
+    ) {
+        self.id = id
+        self.chunkIndex = chunkIndex
+        self.startTime = startTime
+        self.endTime = endTime
+        self.text = text
+        self.source = source
+    }
+}
+
+enum TranscriptSegmentSource: String, Hashable, Codable {
+    case live
+    case final
 }
 
 enum TranscriptStatus: String, Hashable, Codable {

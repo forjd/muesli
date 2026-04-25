@@ -149,7 +149,13 @@ final class TranscriptionStore: ObservableObject {
             let result = try await transcriber.transcribe(audioURL: audioURL, model: model)
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                 sessions[updatedIndex].status = .complete
-                sessions[updatedIndex].transcript = result.text
+                let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                sessions[updatedIndex].finalTranscript = trimmed
+                if !trimmed.isEmpty {
+                    sessions[updatedIndex].transcript = trimmed
+                } else if !sessions[updatedIndex].liveTranscript.isEmpty {
+                    sessions[updatedIndex].transcript = sessions[updatedIndex].liveTranscript
+                }
             }
             statusMessage = "Transcription complete."
         } catch {
@@ -212,10 +218,14 @@ final class TranscriptionStore: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         liveChunkStats[sessionID, default: LiveChunkStats()].completed += 1
         if !trimmed.isEmpty {
-            if sessions[index].transcript.isEmpty {
-                sessions[index].transcript = trimmed
+            if sessions[index].liveTranscript.isEmpty {
+                sessions[index].liveTranscript = trimmed
             } else {
-                sessions[index].transcript += " " + trimmed
+                sessions[index].liveTranscript += " " + trimmed
+            }
+
+            if sessions[index].finalTranscript.isEmpty {
+                sessions[index].transcript = sessions[index].liveTranscript
             }
         }
 
@@ -283,13 +293,13 @@ final class TranscriptionStore: ObservableObject {
         }
 
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(session.transcript, forType: .string)
+        NSPasteboard.general.setString(session.displayTranscript, forType: .string)
         statusMessage = "Transcript copied."
     }
 
     func exportTranscript(sessionID: TranscriptSession.ID, format: TranscriptExportFormat) {
         guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
-        guard !session.transcript.isEmpty else {
+        guard !session.displayTranscript.isEmpty else {
             statusMessage = "No transcript to export."
             return
         }
@@ -353,14 +363,17 @@ final class TranscriptionStore: ObservableObject {
     private func exportData(for session: TranscriptSession, format: TranscriptExportFormat) throws -> Data {
         switch format {
         case .text:
-            return Data(session.transcript.utf8)
+            return Data(session.displayTranscript.utf8)
         case .json:
             let payload = TranscriptExportPayload(
                 id: session.id,
                 createdAt: session.createdAt,
                 audioPath: session.audioURL.path,
                 model: session.model.rawValue,
-                transcript: session.transcript
+                transcript: session.displayTranscript,
+                liveTranscript: session.liveTranscript,
+                finalTranscript: session.finalTranscript,
+                segments: session.segments
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -405,4 +418,7 @@ private struct TranscriptExportPayload: Encodable {
     let audioPath: String
     let model: String
     let transcript: String
+    let liveTranscript: String
+    let finalTranscript: String
+    let segments: [TranscriptSegment]
 }

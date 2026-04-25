@@ -116,7 +116,7 @@ private struct TranscriptDetail: View {
                     Button("Copy", systemImage: "doc.on.doc") {
                         store.copyTranscript(sessionID: session.id)
                     }
-                    .disabled(session.transcript.isEmpty)
+                    .disabled(session.displayTranscript.isEmpty)
 
                     Menu {
                         Button("Text") {
@@ -129,7 +129,7 @@ private struct TranscriptDetail: View {
                     } label: {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }
-                    .disabled(session.transcript.isEmpty)
+                    .disabled(session.displayTranscript.isEmpty)
 
                     Button("Transcribe", systemImage: "text.bubble") {
                         Task { await store.transcribe(sessionID: session.id) }
@@ -147,17 +147,52 @@ private struct TranscriptDetail: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
 
-                Text(session.transcript.isEmpty ? "Transcript will appear here after the Parakeet sidecar finishes." : session.transcript)
-                    .font(.body)
-                    .lineSpacing(4)
-                    .foregroundStyle(session.transcript.isEmpty ? .secondary : .primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(.background, in: RoundedRectangle(cornerRadius: 8))
+                TranscriptTextView(session: session)
             }
             .padding()
         }
+    }
+}
+
+private struct TranscriptTextView: View {
+    let session: TranscriptSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !session.finalTranscript.isEmpty && !session.liveTranscript.isEmpty && session.finalTranscript != session.liveTranscript {
+                TranscriptBlock(title: "Final", text: session.finalTranscript, isPlaceholder: false)
+                TranscriptBlock(title: "Live", text: session.liveTranscript, isPlaceholder: false)
+            } else {
+                TranscriptBlock(
+                    title: session.finalTranscript.isEmpty ? "Transcript" : "Final",
+                    text: session.displayTranscript.isEmpty ? "Transcript will appear here after the Parakeet sidecar finishes." : session.displayTranscript,
+                    isPlaceholder: session.displayTranscript.isEmpty
+                )
+            }
+        }
+    }
+}
+
+private struct TranscriptBlock: View {
+    let title: String
+    let text: String
+    let isPlaceholder: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(text)
+                .font(.body)
+                .lineSpacing(4)
+                .foregroundStyle(isPlaceholder ? .secondary : .primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding()
+        .background(.background, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
