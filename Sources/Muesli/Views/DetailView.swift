@@ -126,6 +126,10 @@ private struct TranscriptDetail: View {
                         Button("JSON") {
                             store.exportTranscript(sessionID: session.id, format: .json)
                         }
+
+                        Button("SRT") {
+                            store.exportTranscript(sessionID: session.id, format: .srt)
+                        }
                     } label: {
                         Label("Export", systemImage: "square.and.arrow.up")
                     }

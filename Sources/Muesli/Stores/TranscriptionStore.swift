@@ -198,7 +198,9 @@ final class TranscriptionStore: ObservableObject {
                     self.appendLiveTranscript(
                         result.text,
                         sessionID: activeSessionID,
-                        chunkIndex: chunk.index
+                        chunkIndex: chunk.index,
+                        startTime: chunk.startTime,
+                        endTime: chunk.endTime
                     )
                 }
             } catch {
@@ -212,7 +214,13 @@ final class TranscriptionStore: ObservableObject {
         liveChunkTasks.append(task)
     }
 
-    private func appendLiveTranscript(_ text: String, sessionID: TranscriptSession.ID, chunkIndex: Int) {
+    private func appendLiveTranscript(
+        _ text: String,
+        sessionID: TranscriptSession.ID,
+        chunkIndex: Int,
+        startTime: TimeInterval,
+        endTime: TimeInterval
+    ) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -223,6 +231,15 @@ final class TranscriptionStore: ObservableObject {
             } else {
                 sessions[index].liveTranscript += " " + trimmed
             }
+            sessions[index].segments.append(
+                TranscriptSegment(
+                    chunkIndex: chunkIndex,
+                    startTime: startTime,
+                    endTime: endTime,
+                    text: trimmed,
+                    source: .live
+                )
+            )
 
             if sessions[index].finalTranscript.isEmpty {
                 sessions[index].transcript = sessions[index].liveTranscript
@@ -253,7 +270,13 @@ final class TranscriptionStore: ObservableObject {
                 do {
                     let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: self.selectedModel)
                     await MainActor.run {
-                        self.appendLiveTranscript(result.text, sessionID: sessionID, chunkIndex: chunk.index)
+                        self.appendLiveTranscript(
+                            result.text,
+                            sessionID: sessionID,
+                            chunkIndex: chunk.index,
+                            startTime: chunk.startTime,
+                            endTime: chunk.endTime
+                        )
                     }
                 } catch {
                     await MainActor.run {
@@ -379,7 +402,37 @@ final class TranscriptionStore: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
             return try encoder.encode(payload)
+        case .srt:
+            return Data(srtText(for: session).utf8)
         }
+    }
+
+    private func srtText(for session: TranscriptSession) -> String {
+        let segments = session.segments
+            .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.startTime < $1.startTime }
+
+        if segments.isEmpty {
+            return "1\n00:00:00,000 --> 00:00:05,000\n\(session.displayTranscript)\n"
+        }
+
+        return segments.enumerated().map { index, segment in
+            [
+                "\(index + 1)",
+                "\(formatSRTTime(segment.startTime)) --> \(formatSRTTime(max(segment.endTime, segment.startTime + 1)))",
+                segment.text,
+                ""
+            ].joined(separator: "\n")
+        }.joined(separator: "\n")
+    }
+
+    private func formatSRTTime(_ time: TimeInterval) -> String {
+        let milliseconds = Int((time * 1000).rounded())
+        let hours = milliseconds / 3_600_000
+        let minutes = (milliseconds % 3_600_000) / 60_000
+        let seconds = (milliseconds % 60_000) / 1000
+        let millis = milliseconds % 1000
+        return String(format: "%02d:%02d:%02d,%03d", hours, minutes, seconds, millis)
     }
 }
 
@@ -392,6 +445,7 @@ struct LiveChunkStats: Hashable {
 enum TranscriptExportFormat {
     case text
     case json
+    case srt
 
     var fileExtension: String {
         switch self {
@@ -399,6 +453,8 @@ enum TranscriptExportFormat {
             "txt"
         case .json:
             "json"
+        case .srt:
+            "srt"
         }
     }
 
@@ -408,6 +464,8 @@ enum TranscriptExportFormat {
             .plainText
         case .json:
             .json
+        case .srt:
+            UTType(filenameExtension: "srt") ?? .plainText
         }
     }
 }

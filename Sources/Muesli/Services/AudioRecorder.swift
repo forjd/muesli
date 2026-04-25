@@ -10,6 +10,7 @@ final class AudioRecorder {
     private var chunkDirectory: URL?
     private var chunkIndex = 0
     private var chunkFrameCount: AVAudioFramePosition = 0
+    private var totalChunkFrames: AVAudioFramePosition = 0
     private var chunkPeakPower: Float = -80
     private var chunkTargetFrames: AVAudioFramePosition = 0
     private var onChunk: ((RecordingChunk) -> Void)?
@@ -58,6 +59,7 @@ final class AudioRecorder {
         self.chunkFile = nil
         self.chunkIndex = 0
         self.chunkFrameCount = 0
+        self.totalChunkFrames = 0
         self.chunkPeakPower = -80
         self.chunkTargetFrames = chunkDuration.map { AVAudioFramePosition($0 * inputFormat.sampleRate) } ?? 0
         self.onChunk = onChunk
@@ -103,6 +105,7 @@ final class AudioRecorder {
             chunkDirectory = nil
             chunkIndex = 0
             chunkFrameCount = 0
+            totalChunkFrames = 0
             chunkPeakPower = -80
             chunkTargetFrames = 0
             onChunk = nil
@@ -173,9 +176,12 @@ final class AudioRecorder {
 
         let finishedIndex = chunkIndex
         let finishedDuration = Double(chunkFrameCount) / format.sampleRate
+        let finishedStartTime = Double(totalChunkFrames) / format.sampleRate
+        let finishedEndTime = finishedStartTime + finishedDuration
         let finishedPeakPower = chunkPeakPower
         let callback = onChunk
         self.chunkFile = nil
+        totalChunkFrames += chunkFrameCount
         chunkFrameCount = 0
         chunkPeakPower = -80
         stateLock.unlock()
@@ -189,6 +195,8 @@ final class AudioRecorder {
                 url: chunkURL,
                 index: finishedIndex,
                 duration: finishedDuration,
+                startTime: finishedStartTime,
+                endTime: finishedEndTime,
                 peakPower: finishedPeakPower
             )
         )
@@ -265,6 +273,8 @@ struct RecordingChunk: Sendable {
     let url: URL
     let index: Int
     let duration: TimeInterval
+    let startTime: TimeInterval
+    let endTime: TimeInterval
     let peakPower: Float
 }
 
