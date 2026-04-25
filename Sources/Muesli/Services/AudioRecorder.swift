@@ -4,6 +4,7 @@ import Foundation
 final class AudioRecorder {
     private let engine = AVAudioEngine()
     private let stateLock = NSLock()
+    private let processingQueue = DispatchQueue(label: "muesli.audio-recorder.processing")
     private var outputFile: AVAudioFile?
     private var chunkFile: AVAudioFile?
     private var chunkDirectory: URL?
@@ -15,6 +16,8 @@ final class AudioRecorder {
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
     private var latestPower: Float = -80
+    private var hasInstalledTap = false
+    private var isStopping = false
     private let speechPowerThreshold: Float = -45
 
     var isRecording: Bool {
@@ -58,6 +61,7 @@ final class AudioRecorder {
         let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
 
         stateLock.lock()
+        isStopping = false
         self.outputFile = outputFile
         self.converter = converter
         self.outputFormat = outputFormat
@@ -71,10 +75,18 @@ final class AudioRecorder {
         latestPower = -80
         stateLock.unlock()
 
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.handle(buffer: buffer)
+        if hasInstalledTap {
+            inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
         }
+
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
+            guard let self, let copiedBuffer = Self.copyBuffer(buffer) else { return }
+            self.processingQueue.async { [weak self] in
+                self?.handle(buffer: copiedBuffer)
+            }
+        }
+        hasInstalledTap = true
 
         engine.prepare()
         try engine.start()
@@ -82,27 +94,35 @@ final class AudioRecorder {
     }
 
     func stop() {
-        if engine.inputNode.numberOfInputs > 0 {
+        stateLock.lock()
+        isStopping = true
+        stateLock.unlock()
+
+        if hasInstalledTap {
             engine.inputNode.removeTap(onBus: 0)
+            hasInstalledTap = false
         }
 
         if engine.isRunning {
             engine.stop()
         }
 
-        stateLock.lock()
-        outputFile = nil
-        chunkFile = nil
-        chunkDirectory = nil
-        chunkIndex = 0
-        chunkFrameCount = 0
-        chunkPeakPower = -80
-        chunkTargetFrames = 0
-        onChunk = nil
-        converter = nil
-        outputFormat = nil
-        latestPower = -80
-        stateLock.unlock()
+        processingQueue.sync {
+            stateLock.lock()
+            outputFile = nil
+            chunkFile = nil
+            chunkDirectory = nil
+            chunkIndex = 0
+            chunkFrameCount = 0
+            chunkPeakPower = -80
+            chunkTargetFrames = 0
+            onChunk = nil
+            converter = nil
+            outputFormat = nil
+            latestPower = -80
+            isStopping = false
+            stateLock.unlock()
+        }
     }
 
     func currentPower() -> Float {
@@ -114,7 +134,7 @@ final class AudioRecorder {
 
     private func handle(buffer: AVAudioPCMBuffer) {
         stateLock.lock()
-        guard let outputFile, let converter, let outputFormat else {
+        guard !isStopping, let outputFile, let converter, let outputFormat else {
             stateLock.unlock()
             return
         }
@@ -235,6 +255,35 @@ final class AudioRecorder {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
+    }
+
+    private static func copyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+            return nil
+        }
+
+        copy.frameLength = buffer.frameLength
+
+        let channelCount = Int(buffer.format.channelCount)
+        let frameCount = Int(buffer.frameLength)
+
+        if let source = buffer.floatChannelData, let destination = copy.floatChannelData {
+            let byteCount = frameCount * MemoryLayout<Float>.size
+            for channel in 0..<channelCount {
+                memcpy(destination[channel], source[channel], byteCount)
+            }
+            return copy
+        }
+
+        if let source = buffer.int16ChannelData, let destination = copy.int16ChannelData {
+            let byteCount = frameCount * MemoryLayout<Int16>.size
+            for channel in 0..<channelCount {
+                memcpy(destination[channel], source[channel], byteCount)
+            }
+            return copy
+        }
+
+        return nil
     }
 }
 
