@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
+
+
+### Bug Fixes
+
+* avoid keychain signing on ci releases ([229eb3b](https://github.com/forjd/muesli/commit/229eb3b8f95aac5b61ecdce429a74e332dcef9ae))
+
 ## [0.1.1](https://github.com/forjd/muesli/compare/v0.1.0...v0.1.1) (2026-04-25)
 
 
