@@ -117,6 +117,8 @@ PLIST
 sign_bundle() {
   if [[ -n "${MUESLI_CODESIGN_IDENTITY:-}" ]]; then
     /usr/bin/codesign --force --deep --options runtime --sign "$MUESLI_CODESIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
+  elif [[ "${CI:-}" == "true" ]]; then
+    /usr/bin/codesign --force --deep --options runtime --sign - "$APP_BUNDLE" >/dev/null
   else
     ensure_local_codesign_identity
     /usr/bin/codesign --force --deep --keychain "$DEV_CODESIGN_KEYCHAIN" --sign "$DEV_CODESIGN_NAME" --timestamp=none "$APP_BUNDLE" >/dev/null
@@ -148,9 +150,10 @@ dictation into the app you were using.
 
 ## Signing
 
-This archive is signed. If \`MUESLI_CODESIGN_IDENTITY\` was not set when it was
-built, it uses the project-local development signing identity and is not
-notarized.
+This archive is signed. CI builds use ad-hoc signing unless
+\`MUESLI_CODESIGN_IDENTITY\` is set. Local builds without
+\`MUESLI_CODESIGN_IDENTITY\` use the project-local development signing identity.
+This archive is not notarized.
 EOF
 }
 

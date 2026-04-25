@@ -124,8 +124,10 @@ The script writes artifacts to `dist/release/`, verifies the app signature, and
 generates release notes. Set `MUESLI_VERSION` to override the default release
 version, and set `MUESLI_CODESIGN_IDENTITY` to sign with a distribution identity.
 
-Without `MUESLI_CODESIGN_IDENTITY`, the archive is signed with Muesli's local
-development identity and is not notarized.
+In GitHub Actions, archives use ad-hoc signing unless
+`MUESLI_CODESIGN_IDENTITY` is configured. Local builds without
+`MUESLI_CODESIGN_IDENTITY` use Muesli's local development identity. Archives are
+not notarized yet.
 
 ## GitHub Releases
 
