@@ -414,6 +414,21 @@ final class TranscriptionStore: ObservableObject {
         statusMessage = "Transcript copied."
     }
 
+    func updateTranscript(sessionID: TranscriptSession.ID, text: String) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !sessions[index].finalTranscript.isEmpty {
+            sessions[index].finalTranscript = trimmed
+        } else if !sessions[index].liveTranscript.isEmpty {
+            sessions[index].liveTranscript = trimmed
+        }
+
+        sessions[index].transcript = trimmed
+        statusMessage = "Transcript updated."
+        scheduleSave()
+    }
+
     func exportTranscript(sessionID: TranscriptSession.ID, format: TranscriptExportFormat) {
         guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
         guard !session.displayTranscript.isEmpty else {

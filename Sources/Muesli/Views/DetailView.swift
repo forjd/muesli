@@ -184,8 +184,8 @@ private struct TranscriptDetail: View {
                 }
             }
 
-            TranscriptTextView(session: session)
-                .layoutPriority(1)
+                TranscriptTextView(session: session, store: store)
+                    .layoutPriority(1)
         }
         .padding(.horizontal, 32)
         .padding(.vertical, 28)
@@ -440,17 +440,32 @@ private struct BenchmarkView: View {
 
 private struct TranscriptTextView: View {
     let session: TranscriptSession
+    @ObservedObject var store: TranscriptionStore
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !session.finalTranscript.isEmpty && !session.liveTranscript.isEmpty && session.finalTranscript != session.liveTranscript {
-                TranscriptBlock(title: "Final", text: session.finalTranscript, isPlaceholder: false)
-                TranscriptBlock(title: "Live", text: session.liveTranscript, isPlaceholder: false)
+                TranscriptBlock(
+                    sessionID: session.id,
+                    title: "Final",
+                    text: session.finalTranscript,
+                    isPlaceholder: false,
+                    store: store
+                )
+                TranscriptBlock(
+                    sessionID: session.id,
+                    title: "Live",
+                    text: session.liveTranscript,
+                    isPlaceholder: false,
+                    store: store
+                )
             } else {
                 TranscriptBlock(
+                    sessionID: session.id,
                     title: session.finalTranscript.isEmpty ? "Transcript" : "Final",
                     text: session.displayTranscript.isEmpty ? "Transcript will appear here after FluidAudio finishes." : session.displayTranscript,
-                    isPlaceholder: session.displayTranscript.isEmpty
+                    isPlaceholder: session.displayTranscript.isEmpty,
+                    store: store
                 )
             }
         }
@@ -459,9 +474,13 @@ private struct TranscriptTextView: View {
 }
 
 private struct TranscriptBlock: View {
+    let sessionID: TranscriptSession.ID
     let title: String
     let text: String
     let isPlaceholder: Bool
+    @ObservedObject var store: TranscriptionStore
+    @State private var isEditing = false
+    @State private var draftText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -472,19 +491,47 @@ private struct TranscriptBlock: View {
                     .textCase(.uppercase)
 
                 Spacer()
+
+                if !isPlaceholder {
+                    Button(isEditing ? "Done" : "Edit", systemImage: isEditing ? "checkmark" : "pencil") {
+                        if isEditing {
+                            store.updateTranscript(sessionID: sessionID, text: draftText)
+                        } else {
+                            draftText = text
+                        }
+                        isEditing.toggle()
+                    }
+                    .buttonStyle(.borderless)
+                }
             }
 
-            ScrollView {
-                Text(text)
+            if isEditing {
+                TextEditor(text: $draftText)
                     .font(.system(.body, design: .serif))
                     .lineSpacing(7)
-                    .foregroundStyle(isPlaceholder ? .secondary : .primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.trailing, 8)
+                    .scrollContentBackground(.hidden)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                ScrollView {
+                    Text(text)
+                        .font(.system(.body, design: .serif))
+                        .lineSpacing(7)
+                        .foregroundStyle(isPlaceholder ? .secondary : .primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(.trailing, 8)
+                }
+                .scrollIndicators(.automatic)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .scrollIndicators(.automatic)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .onAppear {
+            draftText = text
+        }
+        .onChange(of: text) { _, newValue in
+            if !isEditing {
+                draftText = newValue
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
