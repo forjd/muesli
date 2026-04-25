@@ -109,6 +109,21 @@ Run focused logic tests:
 swift run MuesliTests
 ```
 
+## Packaging
+
+Create a release app bundle and zip archive:
+
+```bash
+./script/package_release.sh
+```
+
+The script writes artifacts to `dist/release/`, verifies the app signature, and
+generates release notes. Set `MUESLI_VERSION` to override the default release
+version, and set `MUESLI_CODESIGN_IDENTITY` to sign with a distribution identity.
+
+Without `MUESLI_CODESIGN_IDENTITY`, the archive is signed with Muesli's local
+development identity and is not notarized.
+
 ## Model Cache
 
 FluidAudio manages the Parakeet model cache. Muesli checks whether the selected
@@ -130,10 +145,12 @@ Resources/Muesli.icns            App icon used by the local app bundle
 logo.icon/                       Source icon package
 logo Exports/                    Exported PNG source artwork
 script/build_and_run.sh          Build, sign, launch, and telemetry helper
+script/package_release.sh        Release app bundle and zip archive helper
 ```
 
 ## Notes
 
-Muesli is currently a developer-oriented macOS app. It is not notarized or
-packaged for distribution yet. The launcher creates local development signing
-material under `.dev-certs/`, which is ignored by Git.
+Muesli is currently a developer-oriented macOS app. Release archives can be
+created locally, but they are not notarized unless you provide your own Apple
+Developer signing and notarization workflow. The local scripts create
+development signing material under `.dev-certs/`, which is ignored by Git.
