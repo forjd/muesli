@@ -23,6 +23,10 @@ struct SessionPersistence {
             .appending(path: "Muesli", directoryHint: .isDirectory)
     }
 
+    var recordingsDirectory: URL {
+        appSupportDirectory.appending(path: "Recordings", directoryHint: .isDirectory)
+    }
+
     func load() -> [TranscriptSession] {
         guard let data = try? Data(contentsOf: sessionsURL) else {
             return []

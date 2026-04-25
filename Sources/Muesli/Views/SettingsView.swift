@@ -5,25 +5,83 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Picker("Default model", selection: $store.selectedModel) {
-                ForEach(ParakeetModel.allCases) { model in
-                    VStack(alignment: .leading) {
-                        Text(model.label)
-                        Text(model.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            Section("Model") {
+                Picker("Default model", selection: $store.selectedModel) {
+                    ForEach(ParakeetModel.allCases) { model in
+                        Text(model.label).tag(model)
                     }
-                    .tag(model)
                 }
+
+                LabeledContent("Backend") {
+                    Text("FluidAudio")
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(store.selectedModel.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
 
-            LabeledContent("Backend") {
-                Text("FluidAudio")
+            Section("Dictation") {
+                Toggle("Paste after Command-Shift-D dictation", isOn: $store.autoPasteDictation)
+
+                LabeledContent("Clipboard fallback") {
+                    Text("Always copy before paste")
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Paste delay")
+                        Spacer()
+                        Text(store.pasteDelay.formatted(.number.precision(.fractionLength(2))) + "s")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+
+                    Slider(value: $store.pasteDelay, in: 0.1...2.0, step: 0.05)
+                }
+
+                Text("Increase the delay if the previous app needs longer to become active before paste is sent.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Storage") {
+                LabeledContent("Recordings folder") {
+                    HStack {
+                        Text(store.recordingsDirectoryURL.path)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+
+                        Button("Open", systemImage: "folder") {
+                            store.openRecordingsFolder()
+                        }
+                    }
+                }
+
+                Toggle("Delete raw audio after transcription", isOn: $store.deleteAudioAfterTranscription)
+
+                Text("Deleting raw audio keeps saved transcripts but removes the original recording file after successful transcription.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Hotkey") {
+                LabeledContent("Dictation paste") {
+                    Text("Command-Shift-D")
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("Shortcut customization is not available yet.")
+                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .padding()
-        .frame(width: 460)
+        .frame(width: 560)
     }
 }

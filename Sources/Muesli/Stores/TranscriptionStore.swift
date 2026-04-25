@@ -7,6 +7,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class TranscriptionStore: ObservableObject {
+    private enum PreferenceKey {
+        static let selectedModel = "selectedModel"
+        static let autoPasteDictation = "autoPasteDictation"
+        static let pasteDelay = "pasteDelay"
+        static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
+    }
+
     private static let pasteLogger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.local.Muesli",
         category: "DictationPaste"
@@ -17,13 +24,33 @@ final class TranscriptionStore: ObservableObject {
     @Published var isRecording = false
     @Published var isBusy = false
     @Published var currentAudioLevel: Float = -80
-    @Published var selectedModel: ParakeetModel = .v3
+    @Published var selectedModel: ParakeetModel = .v3 {
+        didSet {
+            UserDefaults.standard.set(selectedModel.rawValue, forKey: PreferenceKey.selectedModel)
+        }
+    }
     @Published var statusMessage = "Ready"
     @Published var isWarmingModel = false
     @Published var modelLoadState: ModelLoadState = .idle
     @Published var recordingElapsed: TimeInterval = 0
     @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
     @Published var transcriberHealth: TranscriberHealth?
+    @Published var autoPasteDictation = true {
+        didSet {
+            UserDefaults.standard.set(autoPasteDictation, forKey: PreferenceKey.autoPasteDictation)
+        }
+    }
+    @Published var pasteDelay: TimeInterval = 0.35 {
+        didSet {
+            pasteDelay = min(max(pasteDelay, 0.1), 2.0)
+            UserDefaults.standard.set(pasteDelay, forKey: PreferenceKey.pasteDelay)
+        }
+    }
+    @Published var deleteAudioAfterTranscription = false {
+        didSet {
+            UserDefaults.standard.set(deleteAudioAfterTranscription, forKey: PreferenceKey.deleteAudioAfterTranscription)
+        }
+    }
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
@@ -41,6 +68,21 @@ final class TranscriptionStore: ObservableObject {
     private let longRecordingFinalPassLimit: TimeInterval = 30 * 60
 
     init() {
+        let defaults = UserDefaults.standard
+        if let modelRawValue = defaults.string(forKey: PreferenceKey.selectedModel),
+           let model = ParakeetModel(rawValue: modelRawValue) {
+            selectedModel = model
+        }
+        if defaults.object(forKey: PreferenceKey.autoPasteDictation) != nil {
+            autoPasteDictation = defaults.bool(forKey: PreferenceKey.autoPasteDictation)
+        }
+        if defaults.object(forKey: PreferenceKey.pasteDelay) != nil {
+            pasteDelay = min(max(defaults.double(forKey: PreferenceKey.pasteDelay), 0.1), 2.0)
+        }
+        if defaults.object(forKey: PreferenceKey.deleteAudioAfterTranscription) != nil {
+            deleteAudioAfterTranscription = defaults.bool(forKey: PreferenceKey.deleteAudioAfterTranscription)
+        }
+
         sessions = persistence.load()
         hydrateRecordingMetadata()
         normalizeInterruptedSessions()
@@ -54,6 +96,10 @@ final class TranscriptionStore: ObservableObject {
     var selectedSession: TranscriptSession? {
         guard let selectedSessionID else { return sessions.first }
         return sessions.first { $0.id == selectedSessionID }
+    }
+
+    var recordingsDirectoryURL: URL {
+        persistence.recordingsDirectory
     }
 
     func toggleRecording() async {
@@ -193,6 +239,10 @@ final class TranscriptionStore: ObservableObject {
             sessions[index].status = .complete
             sessions[index].transcript = sessions[index].liveTranscript
             sessions[index].finalTranscript = ""
+            if deleteAudioAfterTranscription {
+                deleteAudioFile(for: sessions[index])
+                updateRecordingMetadata(at: index)
+            }
             statusMessage = "Skipped final pass for long recording; using live transcript."
             isBusy = false
             scheduleSave()
@@ -209,6 +259,10 @@ final class TranscriptionStore: ObservableObject {
                     sessions[updatedIndex].transcript = trimmed
                 } else if !sessions[updatedIndex].liveTranscript.isEmpty {
                     sessions[updatedIndex].transcript = sessions[updatedIndex].liveTranscript
+                }
+                if deleteAudioAfterTranscription {
+                    deleteAudioFile(for: sessions[updatedIndex])
+                    updateRecordingMetadata(at: updatedIndex)
                 }
             }
             statusMessage = "Transcription complete."
@@ -461,6 +515,14 @@ final class TranscriptionStore: ObservableObject {
 
         let isTrusted = AXIsProcessTrusted()
         Self.pasteLogger.info("Accessibility trusted=\(isTrusted, privacy: .public)")
+        guard autoPasteDictation else {
+            dictationTargetApp = nil
+            dictationTargetElement = nil
+            dictationTargetBundleIdentifier = nil
+            statusMessage = "Copied transcript. Auto-paste is off."
+            return
+        }
+
         guard isTrusted else {
             dictationTargetApp = nil
             dictationTargetElement = nil
@@ -479,7 +541,8 @@ final class TranscriptionStore: ObservableObject {
         Self.pasteLogger.info("Paste target app=\(target?.localizedName ?? "nil", privacy: .public) bundle=\(targetBundleIdentifier ?? "nil", privacy: .public) pid=\(target?.processIdentifier ?? -1, privacy: .public) capturedAX=\(Self.describeAccessibilityElement(targetElement), privacy: .public)")
 
         statusMessage = "Copied transcript; attempting paste into \(target?.localizedName ?? "front app")..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+        let pasteDelay = pasteDelay
+        DispatchQueue.main.asyncAfter(deadline: .now() + pasteDelay) { [weak self] in
             if let processIdentifier = target?.processIdentifier {
                 Self.pasteLogger.info("Posting single Command-V to pid=\(processIdentifier, privacy: .public)")
                 Self.postPasteShortcut(to: processIdentifier)
@@ -492,6 +555,11 @@ final class TranscriptionStore: ObservableObject {
                 self?.statusMessage = "Copied transcript and sent paste shortcut."
             }
         }
+    }
+
+    func openRecordingsFolder() {
+        try? FileManager.default.createDirectory(at: recordingsDirectoryURL, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(recordingsDirectoryURL)
     }
 
     private static func focusedAccessibilityElement() -> AXUIElement? {
@@ -788,13 +856,17 @@ final class TranscriptionStore: ObservableObject {
 
     private func deleteFiles(for session: TranscriptSession) {
         let fileManager = FileManager.default
-        try? fileManager.removeItem(at: session.audioURL)
+        deleteAudioFile(for: session)
 
         let chunkDirectory = session.audioURL
             .deletingLastPathComponent()
             .appending(path: "Chunks", directoryHint: .isDirectory)
             .appending(path: session.audioURL.deletingPathExtension().lastPathComponent, directoryHint: .isDirectory)
         try? fileManager.removeItem(at: chunkDirectory)
+    }
+
+    private func deleteAudioFile(for session: TranscriptSession) {
+        try? FileManager.default.removeItem(at: session.audioURL)
     }
 
     private func exportFilename(for session: TranscriptSession, format: TranscriptExportFormat) -> String {
