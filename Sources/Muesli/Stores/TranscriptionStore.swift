@@ -440,11 +440,9 @@ final class TranscriptionStore: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
 
-        guard AXIsProcessTrustedWithOptions([
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
-        ] as CFDictionary) else {
+        guard AXIsProcessTrusted() else {
             dictationTargetApp = nil
-            statusMessage = "Copied transcript. Enable Accessibility permission for auto-paste."
+            statusMessage = "Copied transcript. Re-enable Muesli in Accessibility if auto-paste does not work."
             return
         }
 

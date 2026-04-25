@@ -21,11 +21,11 @@ swift build
 BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
 
-rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 
+rm -rf "$APP_BUNDLE/$RESOURCE_BUNDLE_NAME"
 if [[ -d "$BUILD_DIR/$RESOURCE_BUNDLE_NAME" ]]; then
   cp -R "$BUILD_DIR/$RESOURCE_BUNDLE_NAME" "$APP_BUNDLE/$RESOURCE_BUNDLE_NAME"
 fi
