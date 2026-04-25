@@ -23,7 +23,7 @@ struct SettingsView: View {
             }
 
             Section("Dictation") {
-                Toggle("Paste after Command-Shift-D dictation", isOn: $store.autoPasteDictation)
+                Toggle("Paste after hotkey dictation", isOn: $store.autoPasteDictation)
 
                 LabeledContent("Clipboard fallback") {
                     Text("Always copy before paste")
@@ -76,7 +76,13 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("Changing this shortcut re-registers the global dictation hotkey immediately.")
+                Picker("Behavior", selection: $store.dictationHotKeyMode) {
+                    ForEach(DictationHotKeyMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+
+                Text(store.dictationHotKeyMode.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

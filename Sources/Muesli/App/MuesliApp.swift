@@ -49,6 +49,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private var hotKeyCancellable: AnyCancellable?
+    private var isHotKeyDown = false
+    private var hybridHoldTask: Task<Void, Never>?
+    private var hybridHoldDidEngage = false
+    private let hybridHoldThreshold: Duration = .milliseconds(350)
     private let dictationHotKeyID = EventHotKeyID(signature: OSType("MUSL".fourCharCode), id: 1)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -81,7 +85,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installGlobalHotKeyHandler() {
         guard hotKeyHandler == nil else { return }
 
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        var eventTypes = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        ]
         let selfPointer = Unmanaged.passUnretained(self).toOpaque()
 
         InstallEventHandler(
@@ -101,11 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard status == noErr, hotKeyID.id == 1 else { return noErr }
 
                 let appDelegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-                appDelegate.toggleDictationPaste()
+                appDelegate.handleDictationHotKey(eventKind: GetEventKind(event))
                 return noErr
             },
-            1,
-            &eventType,
+            eventTypes.count,
+            &eventTypes,
             selfPointer,
             &hotKeyHandler
         )
@@ -137,6 +144,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor [weak self] in
             await self?.store?.toggleDictationPaste()
         }
+    }
+
+    private func handleDictationHotKey(eventKind: UInt32) {
+        switch eventKind {
+        case UInt32(kEventHotKeyPressed):
+            guard !isHotKeyDown else { return }
+            isHotKeyDown = true
+            handleDictationHotKeyPressed()
+        case UInt32(kEventHotKeyReleased):
+            guard isHotKeyDown else { return }
+            isHotKeyDown = false
+            handleDictationHotKeyReleased()
+        default:
+            break
+        }
+    }
+
+    private func handleDictationHotKeyPressed() {
+        switch store?.dictationHotKeyMode ?? .toggle {
+        case .toggle:
+            toggleDictationPaste()
+        case .pushToTalk:
+            Task { @MainActor [weak self] in
+                await self?.store?.startDictationPaste()
+                if let store = self?.store, store.isRecording {
+                    store.statusMessage = "Release \(store.dictationHotKey.label) to paste."
+                }
+            }
+        case .hybrid:
+            if store?.isRecording == true {
+                cancelHybridHold()
+                Task { @MainActor [weak self] in
+                    await self?.store?.finishDictationPaste()
+                }
+                return
+            }
+
+            hybridHoldDidEngage = false
+            Task { @MainActor [weak self] in
+                await self?.store?.startDictationPaste()
+            }
+            hybridHoldTask = Task { @MainActor [weak self] in
+                do {
+                    try await Task.sleep(for: self?.hybridHoldThreshold ?? .milliseconds(350))
+                    guard !Task.isCancelled else { return }
+                    self?.hybridHoldDidEngage = true
+                    if let store = self?.store, store.isRecording {
+                        store.statusMessage = "Release \(store.dictationHotKey.label) to paste."
+                    }
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private func handleDictationHotKeyReleased() {
+        switch store?.dictationHotKeyMode ?? .toggle {
+        case .toggle:
+            break
+        case .pushToTalk:
+            Task { @MainActor [weak self] in
+                await self?.store?.finishDictationPaste()
+            }
+        case .hybrid:
+            hybridHoldTask?.cancel()
+            hybridHoldTask = nil
+            guard hybridHoldDidEngage else { return }
+            hybridHoldDidEngage = false
+            Task { @MainActor [weak self] in
+                await self?.store?.finishDictationPaste()
+            }
+        }
+    }
+
+    private func cancelHybridHold() {
+        hybridHoldTask?.cancel()
+        hybridHoldTask = nil
+        hybridHoldDidEngage = false
     }
 
     private func installStatusItem() {

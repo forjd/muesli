@@ -12,6 +12,7 @@ final class TranscriptionStore: ObservableObject {
         static let pasteDelay = "pasteDelay"
         static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
         static let dictationHotKey = "dictationHotKey"
+        static let dictationHotKeyMode = "dictationHotKeyMode"
     }
 
     private static let pasteLogger = Logger(
@@ -56,6 +57,11 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(dictationHotKey.rawValue, forKey: PreferenceKey.dictationHotKey)
         }
     }
+    @Published var dictationHotKeyMode: DictationHotKeyMode = .toggle {
+        didSet {
+            UserDefaults.standard.set(dictationHotKeyMode.rawValue, forKey: PreferenceKey.dictationHotKeyMode)
+        }
+    }
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
@@ -90,6 +96,10 @@ final class TranscriptionStore: ObservableObject {
         if let hotKeyRawValue = defaults.string(forKey: PreferenceKey.dictationHotKey),
            let hotKey = DictationHotKey(rawValue: hotKeyRawValue) {
             dictationHotKey = hotKey
+        }
+        if let hotKeyModeRawValue = defaults.string(forKey: PreferenceKey.dictationHotKeyMode),
+           let hotKeyMode = DictationHotKeyMode(rawValue: hotKeyModeRawValue) {
+            dictationHotKeyMode = hotKeyMode
         }
 
         sessions = persistence.load()
@@ -206,23 +216,33 @@ final class TranscriptionStore: ObservableObject {
 
     func toggleDictationPaste() async {
         if isRecording {
-            Self.pasteLogger.info("Dictation hotkey stop requested")
-            guard let sessionID = stopRecording() else { return }
-            await transcribe(sessionID: sessionID)
-            pasteTranscript(sessionID: sessionID)
+            await finishDictationPaste()
         } else {
-            dictationTargetApp = NSWorkspace.shared.frontmostApplication
-            dictationTargetBundleIdentifier = dictationTargetApp?.bundleIdentifier
-            dictationTargetElement = Self.focusedAccessibilityElement()
-            let targetName = dictationTargetApp?.localizedName ?? "nil"
-            let targetBundle = dictationTargetBundleIdentifier ?? "nil"
-            let elementSummary = Self.describeAccessibilityElement(dictationTargetElement)
-            Self.pasteLogger.info("Dictation hotkey start target=\(targetName, privacy: .public) bundle=\(targetBundle, privacy: .public) axElement=\(elementSummary, privacy: .public)")
-            await startRecording()
-            if isRecording {
-                statusMessage = "Dictation recording; press \(dictationHotKey.label) to paste."
-            }
+            await startDictationPaste()
         }
+    }
+
+    func startDictationPaste() async {
+        guard !isRecording else { return }
+        dictationTargetApp = NSWorkspace.shared.frontmostApplication
+        dictationTargetBundleIdentifier = dictationTargetApp?.bundleIdentifier
+        dictationTargetElement = Self.focusedAccessibilityElement()
+        let targetName = dictationTargetApp?.localizedName ?? "nil"
+        let targetBundle = dictationTargetBundleIdentifier ?? "nil"
+        let elementSummary = Self.describeAccessibilityElement(dictationTargetElement)
+        Self.pasteLogger.info("Dictation hotkey start target=\(targetName, privacy: .public) bundle=\(targetBundle, privacy: .public) axElement=\(elementSummary, privacy: .public)")
+        await startRecording()
+        if isRecording {
+            statusMessage = "Dictation recording; press \(dictationHotKey.label) to paste."
+        }
+    }
+
+    func finishDictationPaste() async {
+        guard isRecording else { return }
+        Self.pasteLogger.info("Dictation hotkey stop requested")
+        guard let sessionID = stopRecording() else { return }
+        await transcribe(sessionID: sessionID)
+        pasteTranscript(sessionID: sessionID)
     }
 
     func transcribe(sessionID: TranscriptSession.ID) async {

@@ -68,3 +68,33 @@ enum DictationHotKey: String, CaseIterable, Codable, Hashable, Identifiable {
         }
     }
 }
+
+enum DictationHotKeyMode: String, CaseIterable, Codable, Hashable, Identifiable {
+    case toggle
+    case pushToTalk
+    case hybrid
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .toggle:
+            "Toggle"
+        case .pushToTalk:
+            "Push to Talk"
+        case .hybrid:
+            "Hybrid"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .toggle:
+            "Press once to start, press again to stop and paste."
+        case .pushToTalk:
+            "Hold to record, release to stop and paste."
+        case .hybrid:
+            "Tap to toggle, or hold to record until release."
+        }
+    }
+}

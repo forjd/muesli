@@ -4,6 +4,7 @@ struct DictationHotKeyTests {
     static func run() throws {
         try testDefaultHotKeyMapsToCommandShiftD()
         try testAllHotKeysRoundTripFromRawValue()
+        try testAllHotKeyModesRoundTripFromRawValue()
     }
 
     private static func testDefaultHotKeyMapsToCommandShiftD() throws {
@@ -19,6 +20,14 @@ struct DictationHotKeyTests {
         for hotKey in DictationHotKey.allCases {
             try expectEqual(DictationHotKey(rawValue: hotKey.rawValue), hotKey)
             try expect(!hotKey.label.isEmpty, "\(hotKey.rawValue) has an empty label")
+        }
+    }
+
+    private static func testAllHotKeyModesRoundTripFromRawValue() throws {
+        for mode in DictationHotKeyMode.allCases {
+            try expectEqual(DictationHotKeyMode(rawValue: mode.rawValue), mode)
+            try expect(!mode.label.isEmpty, "\(mode.rawValue) has an empty label")
+            try expect(!mode.detail.isEmpty, "\(mode.rawValue) has an empty detail")
         }
     }
 }
