@@ -37,14 +37,24 @@ private struct SidebarSessionRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(session.createdAt, format: .dateTime.hour().minute().second())
+                    .fontWeight(.medium)
                     .lineLimit(1)
 
-                Text(session.status.rawValue)
+                Text(detailText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
+    }
+
+    private var detailText: String {
+        let transcript = session.displayTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else {
+            return session.status.rawValue
+        }
+
+        return "\(session.status.rawValue) · \(transcript)"
     }
 
     private var iconName: String {

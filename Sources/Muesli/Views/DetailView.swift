@@ -6,8 +6,9 @@ struct DetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             RecorderHeaderView(store: store)
-                .padding()
-                .background(.regularMaterial)
+                .padding(.horizontal, 28)
+                .padding(.vertical, 18)
+                .background(.bar)
 
             Divider()
 
@@ -24,11 +25,11 @@ private struct RecorderHeaderView: View {
     @ObservedObject var store: TranscriptionStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Muesli")
-                        .font(.title2.weight(.semibold))
+                        .font(.system(.title2, design: .rounded, weight: .semibold))
                     Text(store.statusMessage)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
@@ -37,21 +38,7 @@ private struct RecorderHeaderView: View {
                 Spacer()
 
                 AudioLevelMeter(level: store.currentAudioLevel)
-                    .frame(width: 180)
-
-                Button {
-                    Task { await store.toggleRecording() }
-                } label: {
-                    Label(store.isRecording ? "Stop" : "Record", systemImage: store.isRecording ? "stop.fill" : "mic.fill")
-                }
-                .buttonStyle(.borderedProminent)
-
-                Button {
-                    Task { await store.transcribeLatestRecording() }
-                } label: {
-                    Label("Transcribe", systemImage: "text.bubble.fill")
-                }
-                .disabled(store.latestRecordingURL == nil || store.isBusy)
+                    .frame(width: 220)
 
                 if store.isWarmingModel {
                     ProgressView()
@@ -65,8 +52,10 @@ private struct RecorderHeaderView: View {
                 Image(systemName: "cpu")
                     .foregroundStyle(.secondary)
                 Text(store.selectedModel.label)
+                    .fontWeight(.medium)
                 Text(store.selectedModel.detail)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
 
                 if store.isRecording {
@@ -110,7 +99,7 @@ private struct TranscriberHealthMenu: View {
                 Task { await store.resetTranscriber() }
             }
         } label: {
-            Label("FluidAudio", systemImage: "waveform")
+            Label("Engine", systemImage: "waveform")
         }
         .disabled(store.isBusy || store.isRecording)
     }
@@ -123,65 +112,9 @@ private struct TranscriptDetail: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(session.createdAt, format: .dateTime.weekday().month().day().hour().minute())
-                            .font(.title3.weight(.semibold))
-                        Text(session.audioURL.path)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .lineLimit(1)
+                RecordingSummary(session: session, stats: store.liveChunkStats[session.id])
 
-                        if let stats = store.liveChunkStats[session.id], stats.submitted > 0 {
-                            LiveChunkStatsView(stats: stats)
-                        }
-                    }
-
-                    Spacer()
-
-                    if let stats = store.liveChunkStats[session.id], stats.failed > 0 {
-                        Button("Retry", systemImage: "arrow.clockwise") {
-                            store.retryFailedChunks(sessionID: session.id)
-                        }
-                    }
-
-                    Button("Bench", systemImage: "speedometer") {
-                        Task { await store.benchmark(sessionID: session.id) }
-                    }
-                    .disabled(store.isBusy || store.isRecording)
-
-                    Button("Delete", systemImage: "trash", role: .destructive) {
-                        store.deleteSession(sessionID: session.id)
-                    }
-
-                    Button("Copy", systemImage: "doc.on.doc") {
-                        store.copyTranscript(sessionID: session.id)
-                    }
-                    .disabled(session.displayTranscript.isEmpty)
-
-                    Menu {
-                        Button("Text") {
-                            store.exportTranscript(sessionID: session.id, format: .text)
-                        }
-
-                        Button("JSON") {
-                            store.exportTranscript(sessionID: session.id, format: .json)
-                        }
-
-                        Button("SRT") {
-                            store.exportTranscript(sessionID: session.id, format: .srt)
-                        }
-                    } label: {
-                        Label("Export", systemImage: "square.and.arrow.up")
-                    }
-                    .disabled(session.displayTranscript.isEmpty)
-
-                    Button("Transcribe", systemImage: "text.bubble") {
-                        Task { await store.transcribe(sessionID: session.id) }
-                    }
-                    .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
-                }
+                RecordingActionBar(session: session, store: store)
 
                 if session.status == .failed, let errorMessage = session.errorMessage {
                     Text(errorMessage)
@@ -199,7 +132,146 @@ private struct TranscriptDetail: View {
 
                 TranscriptTextView(session: session)
             }
-            .padding()
+            .padding(.horizontal, 32)
+            .padding(.vertical, 28)
+            .frame(maxWidth: 980, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct RecordingSummary: View {
+    let session: TranscriptSession
+    let stats: LiveChunkStats?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(session.createdAt, format: .dateTime.weekday().month().day().hour().minute())
+                    .font(.system(.title2, design: .rounded, weight: .semibold))
+
+                StatusBadge(status: session.status)
+
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                Label(shortPath(session.audioURL), systemImage: "waveform.path.ecg")
+                    .lineLimit(1)
+                    .help(session.audioURL.path)
+                    .textSelection(.enabled)
+
+                if let stats, stats.submitted > 0 {
+                    Divider()
+                        .frame(height: 14)
+                    LiveChunkStatsView(stats: stats)
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+    }
+
+    private func shortPath(_ url: URL) -> String {
+        let parent = url.deletingLastPathComponent().lastPathComponent
+        return "\(parent)/\(url.lastPathComponent)"
+    }
+}
+
+private struct RecordingActionBar: View {
+    let session: TranscriptSession
+    @ObservedObject var store: TranscriptionStore
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let stats = store.liveChunkStats[session.id], stats.failed > 0 {
+                Button("Retry", systemImage: "arrow.clockwise") {
+                    store.retryFailedChunks(sessionID: session.id)
+                }
+            }
+
+            Button("Benchmark", systemImage: "speedometer") {
+                Task { await store.benchmark(sessionID: session.id) }
+            }
+            .disabled(store.isBusy || store.isRecording)
+
+            Button("Transcribe", systemImage: "text.bubble") {
+                Task { await store.transcribe(sessionID: session.id) }
+            }
+            .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
+
+            Spacer()
+
+            Button("Copy", systemImage: "doc.on.doc") {
+                store.copyTranscript(sessionID: session.id)
+            }
+            .disabled(session.displayTranscript.isEmpty)
+
+            Menu {
+                Button("Text") {
+                    store.exportTranscript(sessionID: session.id, format: .text)
+                }
+
+                Button("JSON") {
+                    store.exportTranscript(sessionID: session.id, format: .json)
+                }
+
+                Button("SRT") {
+                    store.exportTranscript(sessionID: session.id, format: .srt)
+                }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .disabled(session.displayTranscript.isEmpty)
+
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                store.deleteSession(sessionID: session.id)
+            }
+        }
+        .buttonStyle(.bordered)
+    }
+}
+
+private struct StatusBadge: View {
+    let status: TranscriptStatus
+
+    var body: some View {
+        Label(status.rawValue, systemImage: iconName)
+            .font(.caption.weight(.semibold))
+            .labelStyle(.titleAndIcon)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(color.opacity(0.12), in: Capsule())
+    }
+
+    private var iconName: String {
+        switch status {
+        case .recording:
+            "mic.fill"
+        case .recorded:
+            "waveform"
+        case .finalizing:
+            "hourglass"
+        case .transcribing:
+            "arrow.triangle.2.circlepath"
+        case .complete:
+            "checkmark.circle.fill"
+        case .failed:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch status {
+        case .recording:
+            .red
+        case .recorded, .finalizing, .transcribing:
+            .blue
+        case .complete:
+            .green
+        case .failed:
+            .orange
         }
     }
 }
@@ -226,7 +298,7 @@ private struct BenchmarkView: View {
             }
             .font(.callout)
         }
-        .padding()
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
@@ -248,6 +320,7 @@ private struct TranscriptTextView: View {
                 )
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -257,20 +330,29 @@ private struct TranscriptBlock: View {
     let isPlaceholder: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+
+                Spacer()
+            }
 
             Text(text)
-                .font(.body)
-                .lineSpacing(4)
+                .font(.system(.body, design: .serif))
+                .lineSpacing(7)
                 .foregroundStyle(isPlaceholder ? .secondary : .primary)
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
         }
-        .padding()
-        .background(.background, in: RoundedRectangle(cornerRadius: 8))
+        .padding(24)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.quaternary, lineWidth: 1)
+        }
     }
 }
 
@@ -305,11 +387,11 @@ private struct AudioLevelMeter: View {
                 Capsule()
                     .fill(.quaternary)
                 Capsule()
-                    .fill(.green)
+                    .fill(level > -45 ? .green : .secondary)
                     .frame(width: proxy.size.width * normalized)
             }
         }
-        .frame(height: 8)
+        .frame(height: 7)
         .accessibilityLabel("Audio level")
     }
 }
