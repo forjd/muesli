@@ -41,6 +41,20 @@ The first launch may take longer because Swift Package Manager resolves
 FluidAudio and FluidAudio downloads the selected Parakeet model. Later launches
 reuse the cached build and model files.
 
+## Installing Release Builds
+
+Release archives are signed but not notarized yet. If macOS blocks a downloaded
+release build, remove the quarantine attribute after unzipping it:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Muesli.app
+open /Applications/Muesli.app
+```
+
+Adjust the path if you run Muesli from somewhere other than `/Applications`.
+This only bypasses the Gatekeeper quarantine warning; Microphone and
+Accessibility permissions still need to be granted in System Settings.
+
 ## Permissions
 
 Muesli needs two macOS permissions:
