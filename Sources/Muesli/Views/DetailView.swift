@@ -40,10 +40,7 @@ private struct RecorderHeaderView: View {
                 AudioLevelMeter(level: store.currentAudioLevel)
                     .frame(width: 220)
 
-                if store.isWarmingModel {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+                ModelLoadBadge(state: store.modelLoadState)
 
                 TranscriberHealthMenu(store: store)
             }
@@ -71,6 +68,62 @@ private struct RecorderHeaderView: View {
     private func formatElapsed(_ elapsed: TimeInterval) -> String {
         let totalSeconds = max(0, Int(elapsed.rounded(.down)))
         return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+private struct ModelLoadBadge: View {
+    let state: ModelLoadState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if state.isLoading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 14, height: 14)
+            } else {
+                Image(systemName: iconName)
+                    .foregroundStyle(color)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(state.label)
+                    .font(.caption.weight(.semibold))
+                Text(state.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .help(state.detail)
+    }
+
+    private var iconName: String {
+        switch state {
+        case .idle:
+            "circle"
+        case .loading:
+            "arrow.down.circle"
+        case .ready:
+            "checkmark.circle.fill"
+        case .failed:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch state {
+        case .idle:
+            .secondary
+        case .loading:
+            .blue
+        case .ready:
+            .green
+        case .failed:
+            .orange
+        }
     }
 }
 

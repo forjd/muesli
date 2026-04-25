@@ -12,6 +12,7 @@ final class TranscriptionStore: ObservableObject {
     @Published var selectedModel: ParakeetModel = .v3
     @Published var statusMessage = "Ready"
     @Published var isWarmingModel = false
+    @Published var modelLoadState: ModelLoadState = .idle
     @Published var recordingElapsed: TimeInterval = 0
     @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
     @Published var transcriberHealth: TranscriberHealth?
@@ -326,14 +327,17 @@ final class TranscriptionStore: ObservableObject {
 
         isWarmingModel = true
         let model = selectedModel
-        statusMessage = "Warming \(model.label)..."
+        modelLoadState = .loading(model.label)
+        statusMessage = "Preparing \(model.label)..."
 
         do {
             try await transcriber.preload(model: model)
             if selectedModel == model {
+                modelLoadState = .ready(model.label)
                 statusMessage = "\(model.label) is ready."
             }
         } catch {
+            modelLoadState = .failed(error.localizedDescription)
             statusMessage = error.localizedDescription
         }
 
@@ -553,6 +557,44 @@ struct LiveChunkStats: Hashable {
     var submitted = 0
     var completed = 0
     var failed = 0
+}
+
+enum ModelLoadState: Hashable {
+    case idle
+    case loading(String)
+    case ready(String)
+    case failed(String)
+
+    var label: String {
+        switch self {
+        case .idle:
+            "Model idle"
+        case let .loading(model):
+            "Loading \(model)"
+        case let .ready(model):
+            "\(model) ready"
+        case .failed:
+            "Model failed"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .idle:
+            "FluidAudio will load the model on first use."
+        case .loading:
+            "Downloading model files if needed, then warming Core ML."
+        case .ready:
+            "Loaded locally and ready for recording."
+        case let .failed(message):
+            message
+        }
+    }
+
+    var isLoading: Bool {
+        if case .loading = self { return true }
+        return false
+    }
 }
 
 enum TranscriptExportFormat {
