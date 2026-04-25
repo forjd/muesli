@@ -109,6 +109,9 @@ Run focused logic tests:
 swift run MuesliTests
 ```
 
+GitHub Actions also runs `swift build` and `swift run MuesliTests` on pushes,
+pull requests, and manual CI workflow dispatches.
+
 ## Packaging
 
 Create a release app bundle and zip archive:
