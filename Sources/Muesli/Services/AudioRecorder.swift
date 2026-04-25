@@ -13,8 +13,7 @@ final class AudioRecorder {
     private var chunkPeakPower: Float = -80
     private var chunkTargetFrames: AVAudioFramePosition = 0
     private var onChunk: ((RecordingChunk) -> Void)?
-    private var converter: AVAudioConverter?
-    private var outputFormat: AVAudioFormat?
+    private var recordingFormat: AVAudioFormat?
     private var latestPower: Float = -80
     private var hasInstalledTap = false
     private var isStopping = false
@@ -48,29 +47,19 @@ final class AudioRecorder {
 
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
-        guard let outputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatInt16,
-            sampleRate: 16_000,
-            channels: 1,
-            interleaved: false
-        ) else {
-            throw AudioRecorderError.unsupportedFormat
-        }
 
-        let outputFile = try AVAudioFile(forWriting: url, settings: outputFormat.settings)
-        let converter = AVAudioConverter(from: inputFormat, to: outputFormat)
+        let outputFile = try AVAudioFile(forWriting: url, settings: inputFormat.settings)
 
         stateLock.lock()
         isStopping = false
         self.outputFile = outputFile
-        self.converter = converter
-        self.outputFormat = outputFormat
+        self.recordingFormat = inputFormat
         self.chunkDirectory = chunkDirectory
         self.chunkFile = nil
         self.chunkIndex = 0
         self.chunkFrameCount = 0
         self.chunkPeakPower = -80
-        self.chunkTargetFrames = chunkDuration.map { AVAudioFramePosition($0 * outputFormat.sampleRate) } ?? 0
+        self.chunkTargetFrames = chunkDuration.map { AVAudioFramePosition($0 * inputFormat.sampleRate) } ?? 0
         self.onChunk = onChunk
         latestPower = -80
         stateLock.unlock()
@@ -117,8 +106,7 @@ final class AudioRecorder {
             chunkPeakPower = -80
             chunkTargetFrames = 0
             onChunk = nil
-            converter = nil
-            outputFormat = nil
+            recordingFormat = nil
             latestPower = -80
             isStopping = false
             stateLock.unlock()
@@ -134,40 +122,17 @@ final class AudioRecorder {
 
     private func handle(buffer: AVAudioPCMBuffer) {
         stateLock.lock()
-        guard !isStopping, let outputFile, let converter, let outputFormat else {
+        guard !isStopping, let outputFile, let recordingFormat else {
             stateLock.unlock()
             return
         }
         stateLock.unlock()
 
-        let ratio = outputFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 8
-        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
-            return
-        }
-
-        var didProvideInput = false
-        var error: NSError?
-        converter.convert(to: convertedBuffer, error: &error) { _, status in
-            if didProvideInput {
-                status.pointee = .noDataNow
-                return nil
-            }
-
-            didProvideInput = true
-            status.pointee = .haveData
-            return buffer
-        }
-
-        guard error == nil, convertedBuffer.frameLength > 0 else {
-            return
-        }
-
         do {
-            try outputFile.write(from: convertedBuffer)
-            let power = calculatePower(from: convertedBuffer)
+            try outputFile.write(from: buffer)
+            let power = calculatePower(from: buffer)
             updatePower(power)
-            try writeChunk(from: convertedBuffer, format: outputFormat, power: power)
+            try writeChunk(from: buffer, format: recordingFormat, power: power)
         } catch {
             stateLock.lock()
             latestPower = -80
@@ -230,17 +195,26 @@ final class AudioRecorder {
     }
 
     private func calculatePower(from buffer: AVAudioPCMBuffer) -> Float {
-        guard let samples = buffer.int16ChannelData?[0], buffer.frameLength > 0 else {
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return -80 }
+
+        var sum: Double = 0
+
+        if let samples = buffer.floatChannelData?[0] {
+            for index in 0..<frameLength {
+                let sample = Double(samples[index])
+                sum += sample * sample
+            }
+        } else if let samples = buffer.int16ChannelData?[0] {
+            for index in 0..<frameLength {
+                let normalized = Double(samples[index]) / Double(Int16.max)
+                sum += normalized * normalized
+            }
+        } else {
             return -80
         }
 
-        var sum: Double = 0
-        for index in 0..<Int(buffer.frameLength) {
-            let normalized = Double(samples[index]) / Double(Int16.max)
-            sum += normalized * normalized
-        }
-
-        let rms = sqrt(sum / Double(buffer.frameLength))
+        let rms = sqrt(sum / Double(frameLength))
         let db = rms > 0 ? Float(20 * log10(rms)) : -80
         return max(-80, min(0, db))
     }
