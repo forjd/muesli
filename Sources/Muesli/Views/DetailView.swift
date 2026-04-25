@@ -65,6 +65,8 @@ private struct RecorderHeaderView: View {
                 Image(systemName: "cpu")
                     .foregroundStyle(.secondary)
                 Text(store.selectedModel.label)
+                Text(store.selectedBackend.label)
+                    .foregroundStyle(.secondary)
                 Text(store.selectedModel.detail)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -91,16 +93,20 @@ private struct WorkerHealthMenu: View {
     var body: some View {
         Menu {
             if let health = store.workerHealth {
+                Text(health.backend.label)
+
                 Label(health.isRunning ? "Running" : "Stopped", systemImage: health.isRunning ? "checkmark.circle" : "xmark.circle")
 
                 if let processID = health.processID {
                     Text("PID \(processID)")
                 }
 
-                Text(health.logURL.path)
-                    .textSelection(.enabled)
+                if let logURL = health.logURL {
+                    Text(logURL.path)
+                        .textSelection(.enabled)
+                }
             } else {
-                Text("Worker not checked")
+                Text("Backend not checked")
             }
 
             Divider()
@@ -113,7 +119,7 @@ private struct WorkerHealthMenu: View {
                 Task { await store.restartWorker() }
             }
         } label: {
-            Label("Worker", systemImage: "server.rack")
+            Label("Backend", systemImage: "server.rack")
         }
         .disabled(store.isBusy || store.isRecording)
     }

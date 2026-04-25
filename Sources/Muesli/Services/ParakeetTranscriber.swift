@@ -1,3 +1,5 @@
+@preconcurrency import AVFoundation
+import FluidAudio
 import Foundation
 
 struct TranscriptionResult: Decodable {
@@ -11,6 +13,8 @@ enum TranscriptionError: LocalizedError {
     case failed(status: Int32, output: String)
     case invalidOutput(String)
     case workerUnavailable(String)
+    case invalidAudio(URL)
+    case audioConversionFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -24,18 +28,71 @@ enum TranscriptionError: LocalizedError {
             "The sidecar returned invalid JSON: \(output)"
         case let .workerUnavailable(message):
             "Parakeet worker is unavailable: \(message)"
+        case let .invalidAudio(url):
+            "Could not read audio at \(url.path)."
+        case let .audioConversionFailed(message):
+            "Could not prepare audio for FluidAudio: \(message)"
         }
     }
 }
 
 actor ParakeetTranscriber {
     private var worker: WorkerProcess?
+    private var fluidAudio = FluidAudioBackend()
 
     deinit {
         worker?.stop()
     }
 
-    func transcribe(audioURL: URL, model: ParakeetModel) async throws -> TranscriptionResult {
+    func transcribe(audioURL: URL, model: ParakeetModel, backend: ParakeetBackend) async throws -> TranscriptionResult {
+        switch backend {
+        case .fluidAudio:
+            return try await fluidAudio.transcribe(audioURL: audioURL, model: model)
+        case .python:
+            return try transcribeWithPython(audioURL: audioURL, model: model)
+        }
+    }
+
+    func preload(model: ParakeetModel, backend: ParakeetBackend) async throws {
+        switch backend {
+        case .fluidAudio:
+            try await fluidAudio.preload(model: model)
+        case .python:
+            try preloadPython(model: model)
+        }
+    }
+
+    func stopWorker() async {
+        worker?.stop()
+        worker = nil
+        await fluidAudio.cleanup()
+    }
+
+    func health(backend: ParakeetBackend) async throws -> WorkerHealth {
+        switch backend {
+        case .fluidAudio:
+            return await fluidAudio.health()
+        case .python:
+            if let worker {
+                return WorkerHealth(
+                    backend: backend,
+                    isRunning: worker.isRunning,
+                    processID: worker.process.processIdentifier,
+                    logURL: worker.errorLogURL
+                )
+            }
+
+            let pythonURL = try resolvePythonExecutable()
+            return WorkerHealth(
+                backend: backend,
+                isRunning: false,
+                processID: nil,
+                logURL: workerLogURL(pythonURL: pythonURL)
+            )
+        }
+    }
+
+    private func transcribeWithPython(audioURL: URL, model: ParakeetModel) throws -> TranscriptionResult {
         let worker = try ensureWorker()
         let request = WorkerRequest(id: UUID().uuidString, type: "transcribe", model: model.rawValue, audio: audioURL.path)
         let response = try worker.send(request)
@@ -47,7 +104,7 @@ actor ParakeetTranscriber {
         return TranscriptionResult(text: response.text ?? "", model: response.model ?? model.rawValue)
     }
 
-    func preload(model: ParakeetModel) async throws {
+    private func preloadPython(model: ParakeetModel) throws {
         let worker = try ensureWorker()
         let request = WorkerRequest(id: UUID().uuidString, type: "preload", model: model.rawValue, audio: nil)
         let response = try worker.send(request)
@@ -55,28 +112,6 @@ actor ParakeetTranscriber {
         guard response.ok else {
             throw TranscriptionError.workerUnavailable(response.error ?? "Unknown worker error")
         }
-    }
-
-    func stopWorker() {
-        worker?.stop()
-        worker = nil
-    }
-
-    func health() throws -> WorkerHealth {
-        if let worker {
-            return WorkerHealth(
-                isRunning: worker.isRunning,
-                processID: worker.process.processIdentifier,
-                logURL: worker.errorLogURL
-            )
-        }
-
-        let pythonURL = try resolvePythonExecutable()
-        return WorkerHealth(
-            isRunning: false,
-            processID: nil,
-            logURL: workerLogURL(pythonURL: pythonURL)
-        )
     }
 
     private func ensureWorker() throws -> WorkerProcess {
@@ -187,10 +222,147 @@ actor ParakeetTranscriber {
     }
 }
 
+private actor FluidAudioBackend {
+    private var asrManager: AsrManager?
+    private var cachedModels: AsrModels?
+    private var activeVersion: AsrModelVersion?
+
+    func transcribe(audioURL: URL, model: ParakeetModel) async throws -> TranscriptionResult {
+        let manager = try await ensureManager(for: model)
+        let samples = try Self.readMono16kSamples(from: audioURL)
+
+        var decoderState = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
+        let result = try await manager.transcribe(samples, decoderState: &decoderState)
+        return TranscriptionResult(text: result.text, model: model.rawValue)
+    }
+
+    func preload(model: ParakeetModel) async throws {
+        _ = try await ensureManager(for: model)
+    }
+
+    func cleanup() async {
+        await asrManager?.cleanup()
+        asrManager = nil
+        activeVersion = nil
+    }
+
+    func health() async -> WorkerHealth {
+        WorkerHealth(
+            backend: .fluidAudio,
+            isRunning: asrManager != nil,
+            processID: nil,
+            logURL: nil
+        )
+    }
+
+    private func ensureManager(for model: ParakeetModel) async throws -> AsrManager {
+        let version = model.asrVersion
+        if let asrManager, activeVersion == version {
+            return asrManager
+        }
+
+        await asrManager?.cleanup()
+        asrManager = nil
+        activeVersion = nil
+
+        let models: AsrModels
+        if let cachedModels, cachedModels.version == version {
+            models = cachedModels
+        } else {
+            models = try await AsrModels.downloadAndLoad(version: version)
+            cachedModels = models
+        }
+
+        let manager = AsrManager(config: .default)
+        try await manager.loadModels(models)
+        asrManager = manager
+        activeVersion = version
+        return manager
+    }
+
+    private static func readMono16kSamples(from url: URL) throws -> [Float] {
+        let file: AVAudioFile
+        do {
+            file = try AVAudioFile(forReading: url)
+        } catch {
+            throw TranscriptionError.invalidAudio(url)
+        }
+
+        guard let inputBuffer = AVAudioPCMBuffer(
+            pcmFormat: file.processingFormat,
+            frameCapacity: AVAudioFrameCount(file.length)
+        ) else {
+            throw TranscriptionError.invalidAudio(url)
+        }
+
+        do {
+            try file.read(into: inputBuffer)
+        } catch {
+            throw TranscriptionError.invalidAudio(url)
+        }
+
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw TranscriptionError.audioConversionFailed("Could not create 16 kHz mono format.")
+        }
+
+        guard let converter = AVAudioConverter(from: file.processingFormat, to: outputFormat) else {
+            throw TranscriptionError.audioConversionFailed("No converter from \(file.processingFormat) to \(outputFormat).")
+        }
+
+        let ratio = outputFormat.sampleRate / file.processingFormat.sampleRate
+        let outputCapacity = AVAudioFrameCount((Double(inputBuffer.frameLength) * ratio).rounded(.up)) + 1024
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
+            throw TranscriptionError.audioConversionFailed("Could not allocate converted audio buffer.")
+        }
+
+        var didProvideInput = false
+        var conversionError: NSError?
+        let status = converter.convert(to: outputBuffer, error: &conversionError) { _, inputStatus in
+            if didProvideInput {
+                inputStatus.pointee = .noDataNow
+                return nil
+            }
+
+            didProvideInput = true
+            inputStatus.pointee = .haveData
+            return inputBuffer
+        }
+
+        if let conversionError {
+            throw TranscriptionError.audioConversionFailed(conversionError.localizedDescription)
+        }
+
+        guard status != .error, let channelData = outputBuffer.floatChannelData?[0] else {
+            throw TranscriptionError.audioConversionFailed("Converter returned \(status).")
+        }
+
+        let frameCount = Int(outputBuffer.frameLength)
+        guard frameCount > 0 else { return [] }
+        return Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+    }
+}
+
+private extension ParakeetModel {
+    var asrVersion: AsrModelVersion {
+        switch self {
+        case .v2:
+            .v2
+        case .v3:
+            .v3
+        }
+    }
+}
+
 struct WorkerHealth: Hashable {
+    let backend: ParakeetBackend
     let isRunning: Bool
     let processID: Int32?
-    let logURL: URL
+    let logURL: URL?
 }
 
 private struct WorkerRequest: Encodable {

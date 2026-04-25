@@ -22,6 +22,15 @@ struct ContentView: View {
                 .frame(width: 210)
                 .disabled(store.isBusy || store.isRecording || store.isWarmingModel)
 
+                Picker("Backend", selection: $store.selectedBackend) {
+                    ForEach(ParakeetBackend.allCases) { backend in
+                        Text(backend.label).tag(backend)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 130)
+                .disabled(store.isBusy || store.isRecording || store.isWarmingModel)
+
                 Button {
                     Task { await store.toggleRecording() }
                 } label: {

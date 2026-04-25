@@ -164,3 +164,28 @@ enum ParakeetModel: String, CaseIterable, Identifiable, Hashable, Codable {
         }
     }
 }
+
+enum ParakeetBackend: String, CaseIterable, Identifiable, Hashable, Codable {
+    case fluidAudio
+    case python
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .fluidAudio:
+            "FluidAudio"
+        case .python:
+            "Python NeMo"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .fluidAudio:
+            "Native Core ML Parakeet backend"
+        case .python:
+            "Project-local Python worker fallback"
+        }
+    }
+}
