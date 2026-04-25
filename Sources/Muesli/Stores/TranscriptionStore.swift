@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 import UniformTypeIdentifiers
 
@@ -27,9 +28,11 @@ final class TranscriptionStore: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
     private var liveChunkQueue: Task<Void, Never>?
+    private let longRecordingFinalPassLimit: TimeInterval = 30 * 60
 
     init() {
         sessions = persistence.load()
+        hydrateRecordingMetadata()
         normalizeInterruptedSessions()
         selectedSessionID = sessions.first?.id
     }
@@ -103,6 +106,7 @@ final class TranscriptionStore: ObservableObject {
             if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
                sessions[index].status == .recording {
                 sessions[index].status = .finalizing
+                updateRecordingMetadata(at: index)
             }
             Task {
                 await transcriber.finishStreaming(sessionID: activeSessionID)
@@ -145,11 +149,24 @@ final class TranscriptionStore: ObservableObject {
         sessions[index].status = .transcribing
         sessions[index].errorMessage = nil
         sessions[index].model = selectedModel
+        updateRecordingMetadata(at: index)
         statusMessage = "Transcribing with \(selectedModel.label)..."
         scheduleSave()
 
         let audioURL = sessions[index].audioURL
         let model = selectedModel
+
+        if let duration = sessions[index].duration,
+           duration > longRecordingFinalPassLimit,
+           !sessions[index].liveTranscript.isEmpty {
+            sessions[index].status = .complete
+            sessions[index].transcript = sessions[index].liveTranscript
+            sessions[index].finalTranscript = ""
+            statusMessage = "Skipped final pass for long recording; using live transcript."
+            isBusy = false
+            scheduleSave()
+            return
+        }
 
         do {
             let result = try await transcriber.transcribe(audioURL: audioURL, model: model)
@@ -186,6 +203,30 @@ final class TranscriptionStore: ObservableObject {
 
         if changed {
             scheduleSave()
+        }
+    }
+
+    private func hydrateRecordingMetadata() {
+        var changed = false
+        for index in sessions.indices where sessions[index].duration == nil || sessions[index].fileSize == nil {
+            updateRecordingMetadata(at: index)
+            changed = true
+        }
+
+        if changed {
+            scheduleSave()
+        }
+    }
+
+    private func updateRecordingMetadata(at index: Int) {
+        let url = sessions[index].audioURL
+        if let audioFile = try? AVAudioFile(forReading: url), audioFile.processingFormat.sampleRate > 0 {
+            sessions[index].duration = Double(audioFile.length) / audioFile.processingFormat.sampleRate
+        }
+
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let size = attributes[.size] as? NSNumber {
+            sessions[index].fileSize = size.int64Value
         }
     }
 
@@ -513,7 +554,9 @@ final class TranscriptionStore: ObservableObject {
                 liveTranscript: session.liveTranscript,
                 finalTranscript: session.finalTranscript,
                 segments: session.segments,
-                benchmarks: session.benchmarks
+                benchmarks: session.benchmarks,
+                duration: session.duration,
+                fileSize: session.fileSize
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -635,4 +678,6 @@ private struct TranscriptExportPayload: Encodable {
     let finalTranscript: String
     let segments: [TranscriptSegment]
     let benchmarks: [TranscriptionBenchmark]
+    let duration: TimeInterval?
+    let fileSize: Int64?
 }

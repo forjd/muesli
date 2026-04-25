@@ -215,6 +215,18 @@ private struct RecordingSummary: View {
                     .help(session.audioURL.path)
                     .textSelection(.enabled)
 
+                if let duration = session.duration {
+                    Divider()
+                        .frame(height: 14)
+                    Label(formatDuration(duration), systemImage: "timer")
+                }
+
+                if let fileSize = session.fileSize {
+                    Divider()
+                        .frame(height: 14)
+                    Text(formatBytes(fileSize))
+                }
+
                 if let stats, stats.submitted > 0 {
                     Divider()
                         .frame(height: 14)
@@ -229,6 +241,21 @@ private struct RecordingSummary: View {
     private func shortPath(_ url: URL) -> String {
         let parent = url.deletingLastPathComponent().lastPathComponent
         return "\(parent)/\(url.lastPathComponent)"
+    }
+
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let seconds = max(0, Int(duration.rounded()))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let remainingSeconds = seconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+        return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 }
 
