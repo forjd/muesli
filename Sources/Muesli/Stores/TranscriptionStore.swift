@@ -73,7 +73,9 @@ final class TranscriptionStore: ObservableObject {
         }
 
         do {
-            let url = try recorder.start(chunkDuration: 4) { [weak self] chunk in
+            let backend = selectedBackend
+            let chunkDuration: TimeInterval = backend == .fluidAudio ? 1 : 4
+            let url = try recorder.start(chunkDuration: chunkDuration) { [weak self] chunk in
                 Task { @MainActor [weak self] in
                     self?.handleLiveChunk(chunk)
                 }
@@ -86,6 +88,7 @@ final class TranscriptionStore: ObservableObject {
             activeRecordingURL = url
             isRecording = true
             statusMessage = "Recording..."
+            try await transcriber.startStreaming(sessionID: session.id, model: selectedModel, backend: backend)
             scheduleSave()
             startMetering()
             startElapsedTimer()
@@ -112,6 +115,10 @@ final class TranscriptionStore: ObservableObject {
             if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
                sessions[index].status == .recording {
                 sessions[index].status = .finalizing
+            }
+            let backend = selectedBackend
+            Task {
+                await transcriber.finishStreaming(sessionID: activeSessionID, backend: backend)
             }
             scheduleSave()
             return activeSessionID
@@ -207,15 +214,31 @@ final class TranscriptionStore: ObservableObject {
             guard let self else { return }
 
             do {
-                let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: model, backend: backend)
-                await MainActor.run {
-                    self.appendLiveTranscript(
-                        result.text,
-                        sessionID: activeSessionID,
-                        chunkIndex: chunk.index,
-                        startTime: chunk.startTime,
-                        endTime: chunk.endTime
-                    )
+                if backend == .fluidAudio {
+                    if let result = try await self.transcriber.streamChunk(sessionID: activeSessionID, chunkURL: chunk.url, model: model, backend: backend) {
+                        await MainActor.run {
+                            self.replaceLiveTranscript(
+                                result,
+                                sessionID: activeSessionID,
+                                chunkIndex: chunk.index
+                            )
+                        }
+                    } else {
+                        await MainActor.run {
+                            self.liveChunkStats[activeSessionID, default: LiveChunkStats()].completed += 1
+                        }
+                    }
+                } else {
+                    let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: model, backend: backend)
+                    await MainActor.run {
+                        self.appendLiveTranscript(
+                            result.text,
+                            sessionID: activeSessionID,
+                            chunkIndex: chunk.index,
+                            startTime: chunk.startTime,
+                            endTime: chunk.endTime
+                        )
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -265,6 +288,71 @@ final class TranscriptionStore: ObservableObject {
         }
 
         scheduleSave()
+    }
+
+    private func replaceLiveTranscript(
+        _ result: StreamingTranscriptionResult,
+        sessionID: TranscriptSession.ID,
+        chunkIndex: Int
+    ) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+
+        liveChunkStats[sessionID, default: LiveChunkStats()].completed += 1
+        let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            scheduleSave()
+            return
+        }
+
+        sessions[index].liveTranscript = trimmed
+        sessions[index].segments.removeAll { $0.source == .live }
+        sessions[index].segments.append(contentsOf: liveSegments(from: result.words, fallbackChunkIndex: chunkIndex))
+
+        if sessions[index].finalTranscript.isEmpty {
+            sessions[index].transcript = trimmed
+        }
+
+        if isRecording, sessionID == activeSessionID {
+            statusMessage = result.newlyConfirmedText.isEmpty
+                ? "Live transcript updated."
+                : "Confirmed: \(result.newlyConfirmedText)"
+        }
+
+        scheduleSave()
+    }
+
+    private func liveSegments(from words: [TimedWord], fallbackChunkIndex: Int) -> [TranscriptSegment] {
+        guard !words.isEmpty else { return [] }
+
+        var segments: [TranscriptSegment] = []
+        var currentWords: [TimedWord] = []
+        var segmentIndex = fallbackChunkIndex * 1_000
+
+        for word in words {
+            currentWords.append(word)
+            let shouldFlush = currentWords.count >= 12 || word.text.last.map { [".", "!", "?"].contains($0) } == true
+            if shouldFlush {
+                segments.append(makeSegment(from: currentWords, chunkIndex: segmentIndex))
+                segmentIndex += 1
+                currentWords = []
+            }
+        }
+
+        if !currentWords.isEmpty {
+            segments.append(makeSegment(from: currentWords, chunkIndex: segmentIndex))
+        }
+
+        return segments
+    }
+
+    private func makeSegment(from words: [TimedWord], chunkIndex: Int) -> TranscriptSegment {
+        TranscriptSegment(
+            chunkIndex: chunkIndex,
+            startTime: words.first?.startTime ?? 0,
+            endTime: max(words.last?.endTime ?? 0, (words.first?.startTime ?? 0) + 1),
+            text: words.map(\.text).joined(separator: " "),
+            source: .live
+        )
     }
 
     func retryFailedChunks(sessionID: TranscriptSession.ID) {

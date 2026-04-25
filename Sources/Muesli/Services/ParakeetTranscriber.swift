@@ -7,6 +7,12 @@ struct TranscriptionResult: Decodable {
     var model: String
 }
 
+struct StreamingTranscriptionResult: Hashable {
+    var text: String
+    var newlyConfirmedText: String
+    var words: [TimedWord]
+}
+
 enum TranscriptionError: LocalizedError {
     case missingScript
     case missingPython([String])
@@ -60,6 +66,21 @@ actor ParakeetTranscriber {
         case .python:
             try preloadPython(model: model)
         }
+    }
+
+    func startStreaming(sessionID: TranscriptSession.ID, model: ParakeetModel, backend: ParakeetBackend) async throws {
+        guard backend == .fluidAudio else { return }
+        try await fluidAudio.startStreaming(sessionID: sessionID, model: model)
+    }
+
+    func streamChunk(sessionID: TranscriptSession.ID, chunkURL: URL, model: ParakeetModel, backend: ParakeetBackend) async throws -> StreamingTranscriptionResult? {
+        guard backend == .fluidAudio else { return nil }
+        return try await fluidAudio.streamChunk(sessionID: sessionID, chunkURL: chunkURL, model: model)
+    }
+
+    func finishStreaming(sessionID: TranscriptSession.ID, backend: ParakeetBackend) async {
+        guard backend == .fluidAudio else { return }
+        await fluidAudio.finishStreaming(sessionID: sessionID)
     }
 
     func stopWorker() async {
@@ -226,6 +247,7 @@ private actor FluidAudioBackend {
     private var asrManager: AsrManager?
     private var cachedModels: AsrModels?
     private var activeVersion: AsrModelVersion?
+    private var streamingSessions: [TranscriptSession.ID: FluidAudioStreamingSession] = [:]
 
     func transcribe(audioURL: URL, model: ParakeetModel) async throws -> TranscriptionResult {
         let manager = try await ensureManager(for: model)
@@ -240,10 +262,35 @@ private actor FluidAudioBackend {
         _ = try await ensureManager(for: model)
     }
 
+    func startStreaming(sessionID: TranscriptSession.ID, model: ParakeetModel) async throws {
+        _ = try await ensureManager(for: model)
+        streamingSessions[sessionID] = FluidAudioStreamingSession(model: model)
+    }
+
+    func streamChunk(sessionID: TranscriptSession.ID, chunkURL: URL, model: ParakeetModel) async throws -> StreamingTranscriptionResult? {
+        let manager = try await ensureManager(for: model)
+        let samples = try Self.readMono16kSamples(from: chunkURL)
+
+        let session: FluidAudioStreamingSession
+        if let existing = streamingSessions[sessionID] {
+            session = existing
+        } else {
+            session = FluidAudioStreamingSession(model: model)
+            streamingSessions[sessionID] = session
+        }
+
+        return try await session.append(samples: samples, manager: manager)
+    }
+
+    func finishStreaming(sessionID: TranscriptSession.ID) {
+        streamingSessions[sessionID] = nil
+    }
+
     func cleanup() async {
         await asrManager?.cleanup()
         asrManager = nil
         activeVersion = nil
+        streamingSessions.removeAll()
     }
 
     func health() async -> WorkerHealth {
@@ -344,6 +391,100 @@ private actor FluidAudioBackend {
         let frameCount = Int(outputBuffer.frameLength)
         guard frameCount > 0 else { return [] }
         return Array(UnsafeBufferPointer(start: channelData, count: frameCount))
+    }
+}
+
+private final class FluidAudioStreamingSession {
+    private let sampleRate = 16_000
+    private let agreementEngine = WordAgreementEngine()
+    private var audioBuffer: [Float] = []
+    private var trimmedSampleCount = 0
+    private var lastTranscribedSampleCount = 0
+    private var decoderLayerCount: Int?
+    private let model: ParakeetModel
+
+    init(model: ParakeetModel) {
+        self.model = model
+    }
+
+    func append(samples: [Float], manager: AsrManager) async throws -> StreamingTranscriptionResult? {
+        audioBuffer.append(contentsOf: samples)
+
+        let absoluteSampleCount = trimmedSampleCount + audioBuffer.count
+        guard absoluteSampleCount - lastTranscribedSampleCount >= sampleRate else { return nil }
+        guard absoluteSampleCount >= sampleRate else { return nil }
+
+        let seekTime = agreementEngine.hypothesisStartTime > 0
+            ? agreementEngine.hypothesisStartTime
+            : agreementEngine.confirmedEndTime
+        let seekSample = max(0, Int(seekTime * Double(sampleRate)))
+        let relativeSeek = max(0, seekSample - trimmedSampleCount)
+        guard relativeSeek < audioBuffer.count else { return nil }
+
+        var slice = Array(audioBuffer[relativeSeek..<audioBuffer.count])
+        guard slice.count >= sampleRate else { return nil }
+
+        if slice.count + sampleRate <= 240_000 {
+            slice += [Float](repeating: 0, count: sampleRate)
+        }
+
+        if decoderLayerCount == nil {
+            decoderLayerCount = await manager.decoderLayerCount
+        }
+
+        let layerCount: Int
+        if let decoderLayerCount {
+            layerCount = decoderLayerCount
+        } else {
+            layerCount = await manager.decoderLayerCount
+            self.decoderLayerCount = layerCount
+        }
+
+        var decoderState = TdtDecoderState.make(decoderLayers: layerCount)
+        let result = try await manager.transcribe(slice, decoderState: &decoderState)
+        lastTranscribedSampleCount = absoluteSampleCount
+
+        let timeOffset = Double(seekSample) / Double(sampleRate)
+        let words = WordAgreementEngine.mergeTokensToWords(result.tokenTimings ?? [], timeOffset: timeOffset)
+
+        let agreement: AgreementResult
+        if words.isEmpty {
+            let fallbackWords = result.text
+                .split(separator: " ")
+                .enumerated()
+                .map { offset, word in
+                    TimedWord(
+                        text: String(word),
+                        startTime: timeOffset + Double(offset) * 0.35,
+                        endTime: timeOffset + Double(offset + 1) * 0.35,
+                        confidence: result.confidence
+                    )
+                }
+            agreement = agreementEngine.process(words: fallbackWords, confidence: result.confidence)
+        } else {
+            agreement = agreementEngine.process(words: words, confidence: result.confidence)
+        }
+
+        trimConfirmedAudio()
+
+        return StreamingTranscriptionResult(
+            text: TextNormalizer.shared.normalizeSentence(agreement.fullText),
+            newlyConfirmedText: TextNormalizer.shared.normalizeSentence(agreement.newlyConfirmedText),
+            words: agreement.words
+        )
+    }
+
+    private func trimConfirmedAudio() {
+        let trimTime = agreementEngine.hypothesisStartTime > 0
+            ? agreementEngine.hypothesisStartTime
+            : agreementEngine.confirmedEndTime
+        let trimSample = max(0, Int(trimTime * Double(sampleRate)))
+        let samplesToTrim = trimSample - trimmedSampleCount
+        guard samplesToTrim > sampleRate, !audioBuffer.isEmpty else { return }
+
+        let trimCount = min(samplesToTrim, audioBuffer.count)
+        audioBuffer.removeFirst(trimCount)
+        trimmedSampleCount += trimCount
     }
 }
 
