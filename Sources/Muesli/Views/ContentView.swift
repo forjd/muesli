@@ -48,6 +48,7 @@ struct ContentView: View {
         }
         .task {
             await store.prepareTranscriber()
+            store.refreshWorkerHealth()
         }
     }
 }

@@ -62,6 +62,23 @@ actor ParakeetTranscriber {
         worker = nil
     }
 
+    func health() throws -> WorkerHealth {
+        if let worker {
+            return WorkerHealth(
+                isRunning: worker.isRunning,
+                processID: worker.process.processIdentifier,
+                logURL: worker.errorLogURL
+            )
+        }
+
+        let pythonURL = try resolvePythonExecutable()
+        return WorkerHealth(
+            isRunning: false,
+            processID: nil,
+            logURL: workerLogURL(pythonURL: pythonURL)
+        )
+    }
+
     private func ensureWorker() throws -> WorkerProcess {
         if let worker, worker.isRunning {
             return worker
@@ -170,6 +187,12 @@ actor ParakeetTranscriber {
     }
 }
 
+struct WorkerHealth: Hashable {
+    let isRunning: Bool
+    let processID: Int32?
+    let logURL: URL
+}
+
 private struct WorkerRequest: Encodable {
     let id: String
     let type: String
@@ -190,7 +213,7 @@ private final class WorkerProcess {
     private let input: FileHandle
     private let output: FileHandle
     private let errorLog: FileHandle
-    private let errorLogURL: URL
+    let errorLogURL: URL
 
     init(process: Process, input: FileHandle, output: FileHandle, errorLog: FileHandle, errorLogURL: URL) {
         self.process = process

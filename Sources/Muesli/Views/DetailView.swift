@@ -57,6 +57,8 @@ private struct RecorderHeaderView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
+
+                WorkerHealthMenu(store: store)
             }
 
             HStack(spacing: 10) {
@@ -80,6 +82,40 @@ private struct RecorderHeaderView: View {
     private func formatElapsed(_ elapsed: TimeInterval) -> String {
         let totalSeconds = max(0, Int(elapsed.rounded(.down)))
         return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+private struct WorkerHealthMenu: View {
+    @ObservedObject var store: TranscriptionStore
+
+    var body: some View {
+        Menu {
+            if let health = store.workerHealth {
+                Label(health.isRunning ? "Running" : "Stopped", systemImage: health.isRunning ? "checkmark.circle" : "xmark.circle")
+
+                if let processID = health.processID {
+                    Text("PID \(processID)")
+                }
+
+                Text(health.logURL.path)
+                    .textSelection(.enabled)
+            } else {
+                Text("Worker not checked")
+            }
+
+            Divider()
+
+            Button("Refresh", systemImage: "arrow.clockwise") {
+                store.refreshWorkerHealth()
+            }
+
+            Button("Restart", systemImage: "power") {
+                Task { await store.restartWorker() }
+            }
+        } label: {
+            Label("Worker", systemImage: "server.rack")
+        }
+        .disabled(store.isBusy || store.isRecording)
     }
 }
 

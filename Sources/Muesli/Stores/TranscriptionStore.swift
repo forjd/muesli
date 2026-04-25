@@ -14,6 +14,7 @@ final class TranscriptionStore: ObservableObject {
     @Published var isWarmingModel = false
     @Published var recordingElapsed: TimeInterval = 0
     @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
+    @Published var workerHealth: WorkerHealth?
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
@@ -307,6 +308,30 @@ final class TranscriptionStore: ObservableObject {
         }
 
         isWarmingModel = false
+        refreshWorkerHealth()
+    }
+
+    func restartWorker() async {
+        await transcriber.stopWorker()
+        workerHealth = nil
+        statusMessage = "Restarting worker..."
+        await prepareTranscriber()
+    }
+
+    func refreshWorkerHealth() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let health = try await self.transcriber.health()
+                await MainActor.run {
+                    self.workerHealth = health
+                }
+            } catch {
+                await MainActor.run {
+                    self.statusMessage = error.localizedDescription
+                }
+            }
+        }
     }
 
     func copyTranscript(sessionID: TranscriptSession.ID) {
