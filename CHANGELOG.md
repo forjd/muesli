@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/forjd/muesli/compare/v0.1.0...v0.1.1) (2026-04-25)
+
+
+### Bug Fixes
+
+* read release version from version file ([15aad7a](https://github.com/forjd/muesli/commit/15aad7af0d7f92c7dcbba385f4d475054617e656))
+
 ## 0.1.0 - 2026-04-25
 
 Initial public release.
