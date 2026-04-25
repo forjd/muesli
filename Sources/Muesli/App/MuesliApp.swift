@@ -29,10 +29,16 @@ struct MuesliApp: App {
                 .keyboardShortcut("t", modifiers: [.command])
                 .disabled(store.latestRecordingURL == nil || store.isBusy)
 
-                Button("Toggle Dictation Paste") {
-                    Task { await store.toggleDictationPaste() }
+                if let keyEquivalent = store.dictationHotKey.keyEquivalent {
+                    Button("Toggle Dictation Paste") {
+                        Task { await store.toggleDictationPaste() }
+                    }
+                    .keyboardShortcut(keyEquivalent, modifiers: store.dictationHotKey.eventModifiers)
+                } else {
+                    Button("Toggle Dictation Paste") {
+                        Task { await store.toggleDictationPaste() }
+                    }
                 }
-                .keyboardShortcut(store.dictationHotKey.keyEquivalent, modifiers: store.dictationHotKey.eventModifiers)
             }
         }
 

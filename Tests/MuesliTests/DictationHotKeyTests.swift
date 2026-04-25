@@ -1,9 +1,11 @@
 import Carbon.HIToolbox
+import Foundation
 
 struct DictationHotKeyTests {
     static func run() throws {
         try testDefaultHotKeyMapsToCommandShiftD()
         try testAllHotKeysRoundTripFromRawValue()
+        try testLegacyPresetRawValuesResolve()
         try testAllHotKeyModesRoundTripFromRawValue()
     }
 
@@ -17,10 +19,18 @@ struct DictationHotKeyTests {
     }
 
     private static func testAllHotKeysRoundTripFromRawValue() throws {
-        for hotKey in DictationHotKey.allCases {
-            try expectEqual(DictationHotKey(rawValue: hotKey.rawValue), hotKey)
-            try expect(!hotKey.label.isEmpty, "\(hotKey.rawValue) has an empty label")
+        for hotKey in DictationHotKey.presets {
+            let data = try JSONEncoder().encode(hotKey)
+            let decoded = try JSONDecoder().decode(DictationHotKey.self, from: data)
+            try expectEqual(decoded, hotKey)
+            try expect(!hotKey.label.isEmpty, "\(hotKey.id) has an empty label")
         }
+    }
+
+    private static func testLegacyPresetRawValuesResolve() throws {
+        try expectEqual(DictationHotKey.legacyPreset(rawValue: "commandShiftD"), .commandShiftD)
+        try expectEqual(DictationHotKey.legacyPreset(rawValue: "commandOptionSpace"), .commandOptionSpace)
+        try expect(DictationHotKey.legacyPreset(rawValue: "unknown") == nil, "Unknown legacy preset should be nil")
     }
 
     private static func testAllHotKeyModesRoundTripFromRawValue() throws {

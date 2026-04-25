@@ -54,7 +54,9 @@ final class TranscriptionStore: ObservableObject {
     }
     @Published var dictationHotKey: DictationHotKey = .commandShiftD {
         didSet {
-            UserDefaults.standard.set(dictationHotKey.rawValue, forKey: PreferenceKey.dictationHotKey)
+            if let data = try? JSONEncoder().encode(dictationHotKey) {
+                UserDefaults.standard.set(data, forKey: PreferenceKey.dictationHotKey)
+            }
         }
     }
     @Published var dictationHotKeyMode: DictationHotKeyMode = .toggle {
@@ -93,8 +95,11 @@ final class TranscriptionStore: ObservableObject {
         if defaults.object(forKey: PreferenceKey.deleteAudioAfterTranscription) != nil {
             deleteAudioAfterTranscription = defaults.bool(forKey: PreferenceKey.deleteAudioAfterTranscription)
         }
-        if let hotKeyRawValue = defaults.string(forKey: PreferenceKey.dictationHotKey),
-           let hotKey = DictationHotKey(rawValue: hotKeyRawValue) {
+        if let hotKeyData = defaults.data(forKey: PreferenceKey.dictationHotKey),
+           let hotKey = try? JSONDecoder().decode(DictationHotKey.self, from: hotKeyData) {
+            dictationHotKey = hotKey
+        } else if let legacyHotKeyRawValue = defaults.string(forKey: PreferenceKey.dictationHotKey),
+                  let hotKey = DictationHotKey.legacyPreset(rawValue: legacyHotKeyRawValue) {
             dictationHotKey = hotKey
         }
         if let hotKeyModeRawValue = defaults.string(forKey: PreferenceKey.dictationHotKeyMode),

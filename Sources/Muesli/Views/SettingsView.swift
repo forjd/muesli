@@ -1,7 +1,10 @@
+import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var store: TranscriptionStore
+    @StateObject private var hotKeyRecorder = HotKeyRecorder()
 
     var body: some View {
         Form {
@@ -70,10 +73,36 @@ struct SettingsView: View {
             }
 
             Section("Hotkey") {
-                Picker("Dictation paste", selection: $store.dictationHotKey) {
-                    ForEach(DictationHotKey.allCases) { hotKey in
-                        Text(hotKey.label).tag(hotKey)
+                LabeledContent("Dictation paste") {
+                    HStack(spacing: 8) {
+                        Text(hotKeyRecorder.isRecording ? "Press a shortcut..." : store.dictationHotKey.label)
+                            .foregroundStyle(hotKeyRecorder.isRecording ? .blue : .secondary)
+                            .monospacedDigit()
+
+                        Menu("Presets") {
+                            ForEach(DictationHotKey.presets) { hotKey in
+                                Button(hotKey.label) {
+                                    store.dictationHotKey = hotKey
+                                }
+                            }
+                        }
+
+                        Button(hotKeyRecorder.isRecording ? "Cancel" : "Record", systemImage: hotKeyRecorder.isRecording ? "xmark.circle" : "keyboard") {
+                            if hotKeyRecorder.isRecording {
+                                hotKeyRecorder.stop()
+                            } else {
+                                hotKeyRecorder.start { hotKey in
+                                    store.dictationHotKey = hotKey
+                                }
+                            }
+                        }
                     }
+                }
+
+                if let errorMessage = hotKeyRecorder.errorMessage {
+                    Text(errorMessage)
+                        .font(.callout)
+                        .foregroundStyle(.orange)
                 }
 
                 Picker("Behavior", selection: $store.dictationHotKeyMode) {
@@ -85,10 +114,61 @@ struct SettingsView: View {
                 Text(store.dictationHotKeyMode.detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
+
+                Text("Custom shortcuts must include Command, Option, or Control. Press Escape to cancel recording.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
         .padding()
-        .frame(width: 560)
+        .frame(width: 620)
+        .onDisappear {
+            hotKeyRecorder.stop()
+        }
+    }
+}
+
+@MainActor
+private final class HotKeyRecorder: ObservableObject {
+    @Published var isRecording = false
+    @Published var errorMessage: String?
+
+    private var monitor: Any?
+
+    func start(onRecord: @escaping (DictationHotKey) -> Void) {
+        stop()
+        isRecording = true
+        errorMessage = nil
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == UInt16(kVK_Escape) {
+                self.stop()
+                return nil
+            }
+
+            guard let hotKey = DictationHotKey(event: event) else {
+                self.errorMessage = "Use Command, Option, or Control with a letter, number, or Space."
+                return nil
+            }
+
+            onRecord(hotKey)
+            self.stop()
+            return nil
+        }
+    }
+
+    func stop() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+        isRecording = false
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
     }
 }
