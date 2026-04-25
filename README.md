@@ -103,6 +103,12 @@ Verify that the app can build, sign, and launch:
 ./script/build_and_run.sh --verify
 ```
 
+Run focused logic tests:
+
+```bash
+swift run MuesliTests
+```
+
 ## Model Cache
 
 FluidAudio manages the Parakeet model cache. Muesli checks whether the selected

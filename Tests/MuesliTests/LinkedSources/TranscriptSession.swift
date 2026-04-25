@@ -1,0 +1,1 @@
+../../../Sources/Muesli/Models/TranscriptSession.swift

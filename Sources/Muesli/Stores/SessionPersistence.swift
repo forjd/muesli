@@ -2,11 +2,13 @@ import Foundation
 
 struct SessionPersistence {
     private let fileManager: FileManager
+    private let appSupportDirectoryOverride: URL?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    init(fileManager: FileManager = .default) {
+    init(fileManager: FileManager = .default, appSupportDirectory: URL? = nil) {
         self.fileManager = fileManager
+        self.appSupportDirectoryOverride = appSupportDirectory
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -19,7 +21,10 @@ struct SessionPersistence {
     }
 
     var appSupportDirectory: URL {
-        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        if let appSupportDirectoryOverride {
+            return appSupportDirectoryOverride
+        }
+        return fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appending(path: "Muesli", directoryHint: .isDirectory)
     }
 
