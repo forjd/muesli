@@ -66,9 +66,20 @@ private struct RecorderHeaderView: View {
                 Text(store.selectedModel.detail)
                     .foregroundStyle(.secondary)
                 Spacer()
+
+                if store.isRecording {
+                    Label(formatElapsed(store.recordingElapsed), systemImage: "timer")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
             }
             .font(.callout)
         }
+    }
+
+    private func formatElapsed(_ elapsed: TimeInterval) -> String {
+        let totalSeconds = max(0, Int(elapsed.rounded(.down)))
+        return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
     }
 }
 
@@ -88,9 +99,19 @@ private struct TranscriptDetail: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .lineLimit(1)
+
+                        if let stats = store.liveChunkStats[session.id], stats.submitted > 0 {
+                            LiveChunkStatsView(stats: stats)
+                        }
                     }
 
                     Spacer()
+
+                    if let stats = store.liveChunkStats[session.id], stats.failed > 0 {
+                        Button("Retry", systemImage: "arrow.clockwise") {
+                            store.retryFailedChunks(sessionID: session.id)
+                        }
+                    }
 
                     Button("Copy", systemImage: "doc.on.doc") {
                         store.copyTranscript(sessionID: session.id)
@@ -137,6 +158,23 @@ private struct TranscriptDetail: View {
             }
             .padding()
         }
+    }
+}
+
+private struct LiveChunkStatsView: View {
+    let stats: LiveChunkStats
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Label("\(stats.completed)/\(stats.submitted)", systemImage: "waveform.badge.mic")
+
+            if stats.failed > 0 {
+                Label("\(stats.failed)", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 }
 

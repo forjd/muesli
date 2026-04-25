@@ -12,6 +12,8 @@ final class TranscriptionStore: ObservableObject {
     @Published var selectedModel: ParakeetModel = .v3
     @Published var statusMessage = "Ready"
     @Published var isWarmingModel = false
+    @Published var recordingElapsed: TimeInterval = 0
+    @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
@@ -19,8 +21,10 @@ final class TranscriptionStore: ObservableObject {
     private var activeRecordingURL: URL?
     private var activeSessionID: TranscriptSession.ID?
     private var meterTask: Task<Void, Never>?
+    private var elapsedTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var liveChunkTasks: [Task<Void, Never>] = []
+    private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
 
     init() {
         sessions = persistence.load()
@@ -65,11 +69,13 @@ final class TranscriptionStore: ObservableObject {
             sessions.insert(session, at: 0)
             selectedSessionID = session.id
             activeSessionID = session.id
+            liveChunkStats[session.id] = LiveChunkStats()
             activeRecordingURL = url
             isRecording = true
             statusMessage = "Recording..."
             scheduleSave()
             startMetering()
+            startElapsedTimer()
         } catch {
             statusMessage = error.localizedDescription
         }
@@ -82,16 +88,17 @@ final class TranscriptionStore: ObservableObject {
         liveChunkTasks.forEach { $0.cancel() }
         liveChunkTasks.removeAll()
         meterTask?.cancel()
+        elapsedTask?.cancel()
         currentAudioLevel = -80
         isRecording = false
 
         if let activeSessionID, sessions.contains(where: { $0.id == activeSessionID }) {
-            statusMessage = "Recording saved."
+            statusMessage = "Finalizing recording..."
             self.activeRecordingURL = nil
             self.activeSessionID = nil
             if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
                sessions[index].status == .recording {
-                sessions[index].status = .recorded
+                sessions[index].status = .finalizing
             }
             scheduleSave()
             return activeSessionID
@@ -161,6 +168,7 @@ final class TranscriptionStore: ObservableObject {
         guard isRecording, let activeSessionID else { return }
 
         let model = selectedModel
+        liveChunkStats[activeSessionID, default: LiveChunkStats()].submitted += 1
         statusMessage = "Transcribing chunk \(chunk.index)..."
         let task = Task { [weak self] in
             guard let self else { return }
@@ -176,6 +184,8 @@ final class TranscriptionStore: ObservableObject {
                 }
             } catch {
                 await MainActor.run {
+                    self.failedLiveChunks[activeSessionID, default: []].append(chunk)
+                    self.liveChunkStats[activeSessionID, default: LiveChunkStats()].failed += 1
                     self.statusMessage = "Chunk \(chunk.index) failed: \(error.localizedDescription)"
                 }
             }
@@ -187,6 +197,7 @@ final class TranscriptionStore: ObservableObject {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        liveChunkStats[sessionID, default: LiveChunkStats()].completed += 1
         if !trimmed.isEmpty {
             if sessions[index].transcript.isEmpty {
                 sessions[index].transcript = trimmed
@@ -200,6 +211,37 @@ final class TranscriptionStore: ObservableObject {
         }
 
         scheduleSave()
+    }
+
+    func retryFailedChunks(sessionID: TranscriptSession.ID) {
+        guard let chunks = failedLiveChunks[sessionID], !chunks.isEmpty else {
+            statusMessage = "No failed chunks to retry."
+            return
+        }
+
+        failedLiveChunks[sessionID] = []
+        liveChunkStats[sessionID, default: LiveChunkStats()].failed = 0
+        statusMessage = "Retrying \(chunks.count) failed chunk\(chunks.count == 1 ? "" : "s")..."
+
+        for chunk in chunks {
+            let task = Task { [weak self] in
+                guard let self else { return }
+
+                do {
+                    let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: self.selectedModel)
+                    await MainActor.run {
+                        self.appendLiveTranscript(result.text, sessionID: sessionID, chunkIndex: chunk.index)
+                    }
+                } catch {
+                    await MainActor.run {
+                        self.failedLiveChunks[sessionID, default: []].append(chunk)
+                        self.liveChunkStats[sessionID, default: LiveChunkStats()].failed += 1
+                        self.statusMessage = "Retry failed for chunk \(chunk.index): \(error.localizedDescription)"
+                    }
+                }
+            }
+            liveChunkTasks.append(task)
+        }
     }
 
     func prepareTranscriber() async {
@@ -266,6 +308,19 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    private func startElapsedTimer() {
+        elapsedTask?.cancel()
+        recordingElapsed = 0
+        let startedAt = Date()
+        elapsedTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                self.recordingElapsed = Date().timeIntervalSince(startedAt)
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
     private func scheduleSave() {
         let sessions = sessions
         let persistence = persistence
@@ -300,6 +355,12 @@ final class TranscriptionStore: ObservableObject {
             return try encoder.encode(payload)
         }
     }
+}
+
+struct LiveChunkStats: Hashable {
+    var submitted = 0
+    var completed = 0
+    var failed = 0
 }
 
 enum TranscriptExportFormat {

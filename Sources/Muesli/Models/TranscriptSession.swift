@@ -31,6 +31,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
 enum TranscriptStatus: String, Hashable, Codable {
     case recording = "Recording"
     case recorded = "Recorded"
+    case finalizing = "Finalizing"
     case transcribing = "Transcribing"
     case complete = "Complete"
     case failed = "Failed"

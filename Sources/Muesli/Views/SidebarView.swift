@@ -46,6 +46,8 @@ private struct SidebarSessionRow: View {
         switch session.status {
         case .recording:
             "mic.fill"
+        case .finalizing:
+            "hourglass"
         case .recorded:
             "waveform"
         case .transcribing:
@@ -61,6 +63,8 @@ private struct SidebarSessionRow: View {
         switch session.status {
         case .recording:
             .red
+        case .finalizing:
+            .blue
         case .recorded, .transcribing:
             .secondary
         case .complete:
