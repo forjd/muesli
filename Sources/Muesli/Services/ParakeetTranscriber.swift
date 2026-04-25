@@ -11,6 +11,7 @@ struct StreamingTranscriptionResult: Hashable {
     var text: String
     var newlyConfirmedText: String
     var words: [TimedWord]
+    var isStableUpdate: Bool
 }
 
 enum TranscriptionError: LocalizedError {
@@ -225,7 +226,7 @@ private final class FluidAudioStreamingSession {
         audioBuffer.append(contentsOf: samples)
 
         let absoluteSampleCount = trimmedSampleCount + audioBuffer.count
-        guard absoluteSampleCount - lastTranscribedSampleCount >= sampleRate else { return nil }
+        guard absoluteSampleCount - lastTranscribedSampleCount >= sampleRate / 2 else { return nil }
         guard absoluteSampleCount >= sampleRate else { return nil }
 
         let seekTime = agreementEngine.hypothesisStartTime > 0
@@ -284,7 +285,8 @@ private final class FluidAudioStreamingSession {
         return StreamingTranscriptionResult(
             text: TextNormalizer.shared.normalizeSentence(agreement.fullText),
             newlyConfirmedText: TextNormalizer.shared.normalizeSentence(agreement.newlyConfirmedText),
-            words: agreement.words
+            words: agreement.words,
+            isStableUpdate: !agreement.newlyConfirmedText.isEmpty
         )
     }
 

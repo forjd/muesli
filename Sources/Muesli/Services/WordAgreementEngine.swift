@@ -26,9 +26,10 @@ struct TimedWord: Hashable {
 
 struct AgreementConfig {
     var tokenConfirmationsNeeded = 2
-    var minWordsToConfirm = 3
-    var minPassConfidence: Float = 0.15
-    var minBoundaryConfidence: Float = 0.45
+    var minWordsToConfirm = 2
+    var minPassConfidence: Float = 0.12
+    var minBoundaryConfidence: Float = 0.35
+    var trailingHypothesisWords = 1
 }
 
 struct AgreementResult {
@@ -177,7 +178,7 @@ final class WordAgreementEngine {
             return max(config.minWordsToConfirm, punctuationIndex + 1)
         }
 
-        return max(0, words.count - 2)
+        return max(0, words.count - config.trailingHypothesisWords)
     }
 
     private func makeResult(hypothesis: [TimedWord], newlyConfirmed: [TimedWord]) -> AgreementResult {

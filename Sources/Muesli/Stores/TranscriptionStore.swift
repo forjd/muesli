@@ -24,8 +24,8 @@ final class TranscriptionStore: ObservableObject {
     private var meterTask: Task<Void, Never>?
     private var elapsedTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
-    private var liveChunkTasks: [Task<Void, Never>] = []
     private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
+    private var liveChunkQueue: Task<Void, Never>?
 
     init() {
         sessions = persistence.load()
@@ -88,8 +88,8 @@ final class TranscriptionStore: ObservableObject {
     func stopRecording() -> TranscriptSession.ID? {
         guard isRecording else { return nil }
         recorder.stop()
-        liveChunkTasks.forEach { $0.cancel() }
-        liveChunkTasks.removeAll()
+        liveChunkQueue?.cancel()
+        liveChunkQueue = nil
         meterTask?.cancel()
         elapsedTask?.cancel()
         currentAudioLevel = -80
@@ -194,7 +194,9 @@ final class TranscriptionStore: ObservableObject {
         let model = selectedModel
         liveChunkStats[activeSessionID, default: LiveChunkStats()].submitted += 1
         statusMessage = "Transcribing chunk \(chunk.index)..."
-        let task = Task { [weak self] in
+        let previousTask = liveChunkQueue
+        liveChunkQueue = Task { [weak self] in
+            await previousTask?.value
             guard let self else { return }
 
             do {
@@ -219,7 +221,6 @@ final class TranscriptionStore: ObservableObject {
                 }
             }
         }
-        liveChunkTasks.append(task)
     }
 
     private func replaceLiveTranscript(
@@ -245,9 +246,11 @@ final class TranscriptionStore: ObservableObject {
         }
 
         if isRecording, sessionID == activeSessionID {
-            statusMessage = result.newlyConfirmedText.isEmpty
-                ? "Live transcript updated."
-                : "Confirmed: \(result.newlyConfirmedText)"
+            if result.isStableUpdate {
+                statusMessage = "Confirmed: \(result.newlyConfirmedText)"
+            } else {
+                statusMessage = "Listening..."
+            }
         }
 
         scheduleSave()
@@ -298,7 +301,7 @@ final class TranscriptionStore: ObservableObject {
         statusMessage = "Retrying \(chunks.count) failed chunk\(chunks.count == 1 ? "" : "s")..."
 
         for chunk in chunks {
-            let task = Task { [weak self] in
+            Task { [weak self] in
                 guard let self else { return }
 
                 do {
@@ -315,7 +318,6 @@ final class TranscriptionStore: ObservableObject {
                     }
                 }
             }
-            liveChunkTasks.append(task)
         }
     }
 
