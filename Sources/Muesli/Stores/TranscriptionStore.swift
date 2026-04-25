@@ -1,10 +1,17 @@
 import AppKit
+import ApplicationServices
 import AVFoundation
 import Foundation
+import OSLog
 import UniformTypeIdentifiers
 
 @MainActor
 final class TranscriptionStore: ObservableObject {
+    private static let pasteLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.local.Muesli",
+        category: "DictationPaste"
+    )
+
     @Published var sessions: [TranscriptSession] = []
     @Published var selectedSessionID: TranscriptSession.ID?
     @Published var isRecording = false
@@ -29,6 +36,8 @@ final class TranscriptionStore: ObservableObject {
     private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
     private var liveChunkQueue: Task<Void, Never>?
     private var dictationTargetApp: NSRunningApplication?
+    private var dictationTargetElement: AXUIElement?
+    private var dictationTargetBundleIdentifier: String?
     private let longRecordingFinalPassLimit: TimeInterval = 30 * 60
 
     init() {
@@ -142,11 +151,18 @@ final class TranscriptionStore: ObservableObject {
 
     func toggleDictationPaste() async {
         if isRecording {
+            Self.pasteLogger.info("Dictation hotkey stop requested")
             guard let sessionID = stopRecording() else { return }
             await transcribe(sessionID: sessionID)
             pasteTranscript(sessionID: sessionID)
         } else {
             dictationTargetApp = NSWorkspace.shared.frontmostApplication
+            dictationTargetBundleIdentifier = dictationTargetApp?.bundleIdentifier
+            dictationTargetElement = Self.focusedAccessibilityElement()
+            let targetName = dictationTargetApp?.localizedName ?? "nil"
+            let targetBundle = dictationTargetBundleIdentifier ?? "nil"
+            let elementSummary = Self.describeAccessibilityElement(dictationTargetElement)
+            Self.pasteLogger.info("Dictation hotkey start target=\(targetName, privacy: .public) bundle=\(targetBundle, privacy: .public) axElement=\(elementSummary, privacy: .public)")
             await startRecording()
             if isRecording {
                 statusMessage = "Dictation recording; press Command-Shift-D to paste."
@@ -383,8 +399,9 @@ final class TranscriptionStore: ObservableObject {
 
         isWarmingModel = true
         let model = selectedModel
-        modelLoadState = .loading(model.label)
-        statusMessage = "Preparing \(model.label)..."
+        let isCached = await transcriber.isModelCached(model)
+        modelLoadState = isCached ? .loadingCached(model.label) : .downloading(model.label)
+        statusMessage = isCached ? "Loading cached \(model.label)..." : "Downloading \(model.label)..."
 
         do {
             try await transcriber.preload(model: model)
@@ -433,34 +450,246 @@ final class TranscriptionStore: ObservableObject {
         guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
         let text = session.displayTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
+            Self.pasteLogger.warning("Paste aborted: transcript empty for session \(sessionID.uuidString, privacy: .public)")
             statusMessage = "No transcript to paste."
             return
         }
 
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+        Self.pasteLogger.info("Paste pipeline copied transcript chars=\(text.count, privacy: .public)")
 
-        guard AXIsProcessTrusted() else {
+        let isTrusted = AXIsProcessTrusted()
+        Self.pasteLogger.info("Accessibility trusted=\(isTrusted, privacy: .public)")
+        guard isTrusted else {
             dictationTargetApp = nil
+            dictationTargetElement = nil
+            dictationTargetBundleIdentifier = nil
             statusMessage = "Copied transcript. Re-enable Muesli in Accessibility if auto-paste does not work."
             return
         }
 
         let target = dictationTargetApp
+        let targetElement = dictationTargetElement
+        let targetBundleIdentifier = dictationTargetBundleIdentifier
         dictationTargetApp = nil
-        target?.activate()
+        dictationTargetElement = nil
+        dictationTargetBundleIdentifier = nil
+        target?.activate(options: [.activateAllWindows])
+        Self.pasteLogger.info("Paste target app=\(target?.localizedName ?? "nil", privacy: .public) bundle=\(targetBundleIdentifier ?? "nil", privacy: .public) pid=\(target?.processIdentifier ?? -1, privacy: .public) capturedAX=\(Self.describeAccessibilityElement(targetElement), privacy: .public)")
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            let source = CGEventSource(stateID: .combinedSessionState)
-            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
-            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)
-            keyDown?.flags = .maskCommand
-            keyUp?.flags = .maskCommand
-            keyDown?.post(tap: .cghidEventTap)
-            keyUp?.post(tap: .cghidEventTap)
+        statusMessage = "Copied transcript; attempting paste into \(target?.localizedName ?? "front app")..."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            let capturedAX = Self.insertTextWithAccessibility(text, into: targetElement)
+            Self.pasteLogger.info("Captured AX insert succeeded=\(capturedAX.succeeded, privacy: .public) detail=\(capturedAX.detail, privacy: .public)")
+            if capturedAX.succeeded {
+                Task { @MainActor in
+                    self?.statusMessage = "Inserted transcript into \(target?.localizedName ?? "front app")."
+                }
+                return
+            }
+
+            let focusedElement = Self.focusedAccessibilityElement()
+            Self.pasteLogger.info("Post-activation focusedAX=\(Self.describeAccessibilityElement(focusedElement), privacy: .public)")
+            let focusedAX = Self.insertTextWithAccessibility(text, into: focusedElement)
+            Self.pasteLogger.info("Focused AX insert succeeded=\(focusedAX.succeeded, privacy: .public) detail=\(focusedAX.detail, privacy: .public)")
+            if focusedAX.succeeded {
+                Task { @MainActor in
+                    self?.statusMessage = "Inserted transcript into focused field."
+                }
+                return
+            }
+
+            if let processIdentifier = target?.processIdentifier {
+                Self.pasteLogger.info("Posting unicode text to pid=\(processIdentifier, privacy: .public)")
+                Self.postUnicodeText(text, to: processIdentifier)
+            } else {
+                Self.pasteLogger.info("Posting unicode text to session")
+                Self.postUnicodeTextToSession(text)
+            }
+
+            let scriptError = Self.postPasteWithSystemEvents(targetBundleIdentifier: targetBundleIdentifier)
+            if let scriptError {
+                Self.pasteLogger.error("System Events paste failed: \(scriptError, privacy: .public)")
+            } else {
+                Self.pasteLogger.info("System Events paste returned without error")
+            }
+
+            if let processIdentifier = target?.processIdentifier {
+                Self.pasteLogger.info("Posting Command-V to pid=\(processIdentifier, privacy: .public)")
+                Self.postPasteShortcut(to: processIdentifier)
+            }
+            Self.pasteLogger.info("Posting Command-V to session event tap")
+            Self.postPasteShortcutToSession()
+
+            Task { @MainActor in
+                if let scriptError {
+                    self?.statusMessage = "Copied transcript; paste failed. AX: \(capturedAX.detail). Script: \(scriptError)"
+                } else {
+                    self?.statusMessage = "Copied transcript; paste fallback sent. AX: \(capturedAX.detail)"
+                }
+            }
+        }
+    }
+
+    private static func focusedAccessibilityElement() -> AXUIElement? {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedValue: CFTypeRef?
+        let focusedError = AXUIElementCopyAttributeValue(
+            systemWide,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedValue
+        )
+        guard focusedError == .success, let focusedValue else { return nil }
+        return (focusedValue as! AXUIElement)
+    }
+
+    private static func describeAccessibilityElement(_ element: AXUIElement?) -> String {
+        guard let element else { return "nil" }
+        let role = accessibilityStringAttribute(kAXRoleAttribute, from: element) ?? "unknown"
+        let subrole = accessibilityStringAttribute(kAXSubroleAttribute, from: element) ?? "none"
+        let title = accessibilityStringAttribute(kAXTitleAttribute, from: element) ?? "none"
+        let hasValue = accessibilityStringAttribute(kAXValueAttribute, from: element) != nil
+        var valueSettable = DarwinBoolean(false)
+        AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable)
+        var selectedTextSettable = DarwinBoolean(false)
+        AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &selectedTextSettable)
+        return "role=\(role) subrole=\(subrole) title=\(title) hasValue=\(hasValue) valueSettable=\(valueSettable.boolValue) selectedTextSettable=\(selectedTextSettable.boolValue)"
+    }
+
+    private static func insertTextWithAccessibility(_ text: String, into element: AXUIElement?) -> PasteAttemptResult {
+        guard let element else {
+            return PasteAttemptResult(succeeded: false, detail: "no focused element")
         }
 
-        statusMessage = "Copied transcript and sent paste."
+        let role = accessibilityStringAttribute(kAXRoleAttribute, from: element) ?? "unknown role"
+        var selectedTextSettable = DarwinBoolean(false)
+        AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &selectedTextSettable)
+        if selectedTextSettable.boolValue {
+            let selectedTextError = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, text as CFString)
+            if selectedTextError == .success {
+                return PasteAttemptResult(succeeded: true, detail: "set selected text on \(role)")
+            }
+        }
+
+        var valueRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef) == .success,
+              let currentText = valueRef as? String
+        else {
+            return PasteAttemptResult(succeeded: false, detail: "\(role) has no writable text value")
+        }
+
+        var valueSettable = DarwinBoolean(false)
+        AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &valueSettable)
+        guard valueSettable.boolValue else {
+            return PasteAttemptResult(succeeded: false, detail: "\(role) value is not settable")
+        }
+
+        var selectedRange = CFRange(location: currentText.utf16.count, length: 0)
+        var selectedRangeRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selectedRangeRef) == .success,
+           let selectedRangeRef,
+           CFGetTypeID(selectedRangeRef) == AXValueGetTypeID(),
+           AXValueGetType(selectedRangeRef as! AXValue) == .cfRange {
+            AXValueGetValue(selectedRangeRef as! AXValue, .cfRange, &selectedRange)
+        }
+
+        let lowerBound = max(0, min(selectedRange.location, currentText.utf16.count))
+        let upperBound = max(lowerBound, min(selectedRange.location + selectedRange.length, currentText.utf16.count))
+        let start = String.Index(utf16Offset: lowerBound, in: currentText)
+        let end = String.Index(utf16Offset: upperBound, in: currentText)
+
+        var updatedText = currentText
+        updatedText.replaceSubrange(start..<end, with: text)
+        guard AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, updatedText as CFString) == .success else {
+            return PasteAttemptResult(succeeded: false, detail: "\(role) rejected AXValue")
+        }
+
+        var insertionRange = CFRange(location: lowerBound + text.utf16.count, length: 0)
+        if let insertionValue = AXValueCreate(.cfRange, &insertionRange) {
+            AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, insertionValue)
+        }
+
+        return PasteAttemptResult(succeeded: true, detail: "set value on \(role)")
+    }
+
+    private static func accessibilityStringAttribute(_ attribute: String, from element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private static func makePasteEvents() -> [CGEvent] {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let commandDown = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true)
+        let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
+        let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
+        let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false)
+
+        commandDown?.flags = .maskCommand
+        vDown?.flags = .maskCommand
+        vUp?.flags = .maskCommand
+        commandUp?.flags = []
+
+        return [commandDown, vDown, vUp, commandUp].compactMap(\.self)
+    }
+
+    private static func postPasteShortcut(to processIdentifier: pid_t) {
+        pasteLogger.debug("postPasteShortcut(to:) events=\(makePasteEvents().count, privacy: .public)")
+        makePasteEvents().forEach { event in
+            event.postToPid(processIdentifier)
+        }
+    }
+
+    private static func postPasteShortcutToSession() {
+        pasteLogger.debug("postPasteShortcutToSession events=\(makePasteEvents().count, privacy: .public)")
+        makePasteEvents().forEach { event in
+            event.post(tap: .cgSessionEventTap)
+        }
+    }
+
+    private static func postUnicodeText(_ text: String, to processIdentifier: pid_t) {
+        pasteLogger.debug("postUnicodeText(to:) utf16Count=\(text.utf16.count, privacy: .public)")
+        makeUnicodeEvents(for: text).forEach { event in
+            event.postToPid(processIdentifier)
+        }
+    }
+
+    private static func postUnicodeTextToSession(_ text: String) {
+        pasteLogger.debug("postUnicodeTextToSession utf16Count=\(text.utf16.count, privacy: .public)")
+        makeUnicodeEvents(for: text).forEach { event in
+            event.post(tap: .cgSessionEventTap)
+        }
+    }
+
+    private static func makeUnicodeEvents(for text: String) -> [CGEvent] {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        return text.utf16.flatMap { codeUnit -> [CGEvent] in
+            var character = codeUnit
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true)
+            keyDown?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &character)
+
+            var keyUpCharacter = codeUnit
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+            keyUp?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &keyUpCharacter)
+
+            return [keyDown, keyUp].compactMap(\.self)
+        }
+    }
+
+    private static func postPasteWithSystemEvents(targetBundleIdentifier: String?) -> String? {
+        var script = ""
+        if let targetBundleIdentifier, !targetBundleIdentifier.isEmpty {
+            script += #"tell application id "\#(targetBundleIdentifier)" to activate"# + "\n"
+            script += "delay 0.3\n"
+        }
+        script += #"tell application "System Events" to keystroke "v" using command down"#
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error {
+            pasteLogger.error("AppleScript error number=\((error[NSAppleScript.errorNumber] as? NSNumber)?.intValue ?? 0, privacy: .public) message=\((error[NSAppleScript.errorMessage] as? String) ?? "unknown", privacy: .public)")
+        }
+        return error?[NSAppleScript.errorMessage] as? String
     }
 
     func updateTranscript(sessionID: TranscriptSession.ID, text: String) {
@@ -666,9 +895,15 @@ struct LiveChunkStats: Hashable {
     var failed = 0
 }
 
+private struct PasteAttemptResult {
+    let succeeded: Bool
+    let detail: String
+}
+
 enum ModelLoadState: Hashable {
     case idle
-    case loading(String)
+    case loadingCached(String)
+    case downloading(String)
     case ready(String)
     case failed(String)
 
@@ -676,8 +911,10 @@ enum ModelLoadState: Hashable {
         switch self {
         case .idle:
             "Model idle"
-        case let .loading(model):
+        case let .loadingCached(model):
             "Loading \(model)"
+        case let .downloading(model):
+            "Downloading \(model)"
         case let .ready(model):
             "\(model) ready"
         case .failed:
@@ -689,8 +926,10 @@ enum ModelLoadState: Hashable {
         switch self {
         case .idle:
             "FluidAudio will load the model on first use."
-        case .loading:
-            "Downloading model files if needed, then warming Core ML."
+        case .loadingCached:
+            "Using cached model files and warming Core ML."
+        case .downloading:
+            "Fetching model files once, then warming Core ML."
         case .ready:
             "Loaded locally and ready for recording."
         case let .failed(message):
@@ -699,8 +938,12 @@ enum ModelLoadState: Hashable {
     }
 
     var isLoading: Bool {
-        if case .loading = self { return true }
-        return false
+        switch self {
+        case .loadingCached, .downloading:
+            true
+        default:
+            false
+        }
     }
 }
 

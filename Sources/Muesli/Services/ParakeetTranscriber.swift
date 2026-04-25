@@ -39,6 +39,10 @@ actor ParakeetTranscriber {
         try await fluidAudio.preload(model: model)
     }
 
+    func isModelCached(_ model: ParakeetModel) async -> Bool {
+        await fluidAudio.isModelCached(model)
+    }
+
     func startStreaming(sessionID: TranscriptSession.ID, model: ParakeetModel) async throws {
         try await fluidAudio.startStreaming(sessionID: sessionID, model: model)
     }
@@ -77,6 +81,12 @@ private actor FluidAudioBackend {
 
     func preload(model: ParakeetModel) async throws {
         _ = try await ensureManager(for: model)
+    }
+
+    func isModelCached(_ model: ParakeetModel) -> Bool {
+        let version = model.asrVersion
+        let cacheDirectory = AsrModels.defaultCacheDirectory(for: version)
+        return AsrModels.modelsExist(at: cacheDirectory, version: version)
     }
 
     func startStreaming(sessionID: TranscriptSession.ID, model: ParakeetModel) async throws {

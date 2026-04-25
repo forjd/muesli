@@ -22,13 +22,12 @@ BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
 BUILD_DIR="$(swift build --show-bin-path)"
 
 mkdir -p "$APP_MACOS"
-cp "$BUILD_BINARY" "$APP_BINARY"
+if [[ ! -f "$APP_BINARY" ]] || ! cmp -s "$BUILD_BINARY" "$APP_BINARY"; then
+  cp "$BUILD_BINARY" "$APP_BINARY"
+fi
 chmod +x "$APP_BINARY"
 
 rm -rf "$APP_BUNDLE/$RESOURCE_BUNDLE_NAME"
-if [[ -d "$BUILD_DIR/$RESOURCE_BUNDLE_NAME" ]]; then
-  cp -R "$BUILD_DIR/$RESOURCE_BUNDLE_NAME" "$APP_BUNDLE/$RESOURCE_BUNDLE_NAME"
-fi
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -52,6 +51,8 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+
+/usr/bin/codesign --force --deep --sign - "$APP_BUNDLE" >/dev/null
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"

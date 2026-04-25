@@ -104,7 +104,9 @@ private struct ModelLoadBadge: View {
         switch state {
         case .idle:
             "circle"
-        case .loading:
+        case .loadingCached:
+            "externaldrive.fill"
+        case .downloading:
             "arrow.down.circle"
         case .ready:
             "checkmark.circle.fill"
@@ -117,7 +119,9 @@ private struct ModelLoadBadge: View {
         switch state {
         case .idle:
             .secondary
-        case .loading:
+        case .loadingCached:
+            .blue
+        case .downloading:
             .blue
         case .ready:
             .green
