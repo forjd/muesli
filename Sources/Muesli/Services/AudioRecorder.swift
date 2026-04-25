@@ -9,11 +9,13 @@ final class AudioRecorder {
     private var chunkDirectory: URL?
     private var chunkIndex = 0
     private var chunkFrameCount: AVAudioFramePosition = 0
+    private var chunkPeakPower: Float = -80
     private var chunkTargetFrames: AVAudioFramePosition = 0
     private var onChunk: ((RecordingChunk) -> Void)?
     private var converter: AVAudioConverter?
     private var outputFormat: AVAudioFormat?
     private var latestPower: Float = -80
+    private let speechPowerThreshold: Float = -45
 
     var isRecording: Bool {
         engine.isRunning
@@ -63,6 +65,7 @@ final class AudioRecorder {
         self.chunkFile = nil
         self.chunkIndex = 0
         self.chunkFrameCount = 0
+        self.chunkPeakPower = -80
         self.chunkTargetFrames = chunkDuration.map { AVAudioFramePosition($0 * outputFormat.sampleRate) } ?? 0
         self.onChunk = onChunk
         latestPower = -80
@@ -93,6 +96,7 @@ final class AudioRecorder {
         chunkDirectory = nil
         chunkIndex = 0
         chunkFrameCount = 0
+        chunkPeakPower = -80
         chunkTargetFrames = 0
         onChunk = nil
         converter = nil
@@ -141,8 +145,9 @@ final class AudioRecorder {
 
         do {
             try outputFile.write(from: convertedBuffer)
-            try writeChunk(from: convertedBuffer, format: outputFormat)
-            updatePower(from: convertedBuffer)
+            let power = calculatePower(from: convertedBuffer)
+            updatePower(power)
+            try writeChunk(from: convertedBuffer, format: outputFormat, power: power)
         } catch {
             stateLock.lock()
             latestPower = -80
@@ -150,7 +155,7 @@ final class AudioRecorder {
         }
     }
 
-    private func writeChunk(from buffer: AVAudioPCMBuffer, format: AVAudioFormat) throws {
+    private func writeChunk(from buffer: AVAudioPCMBuffer, format: AVAudioFormat, power: Float) throws {
         stateLock.lock()
         let targetFrames = chunkTargetFrames
         guard targetFrames > 0, let chunkDirectory else {
@@ -161,6 +166,7 @@ final class AudioRecorder {
         if chunkFile == nil {
             chunkIndex += 1
             chunkFrameCount = 0
+            chunkPeakPower = -80
             let url = chunkDirectory.appending(path: String(format: "chunk-%04d.wav", chunkIndex))
             chunkFile = try AVAudioFile(forWriting: url, settings: format.settings)
         }
@@ -173,6 +179,7 @@ final class AudioRecorder {
         let chunkURL = chunkFile.url
         try chunkFile.write(from: buffer)
         chunkFrameCount += AVAudioFramePosition(buffer.frameLength)
+        chunkPeakPower = max(chunkPeakPower, power)
 
         guard chunkFrameCount >= targetFrames else {
             stateLock.unlock()
@@ -181,17 +188,30 @@ final class AudioRecorder {
 
         let finishedIndex = chunkIndex
         let finishedDuration = Double(chunkFrameCount) / format.sampleRate
+        let finishedPeakPower = chunkPeakPower
         let callback = onChunk
         self.chunkFile = nil
         chunkFrameCount = 0
+        chunkPeakPower = -80
         stateLock.unlock()
 
-        callback?(RecordingChunk(url: chunkURL, index: finishedIndex, duration: finishedDuration))
+        guard finishedPeakPower >= speechPowerThreshold else {
+            return
+        }
+
+        callback?(
+            RecordingChunk(
+                url: chunkURL,
+                index: finishedIndex,
+                duration: finishedDuration,
+                peakPower: finishedPeakPower
+            )
+        )
     }
 
-    private func updatePower(from buffer: AVAudioPCMBuffer) {
+    private func calculatePower(from buffer: AVAudioPCMBuffer) -> Float {
         guard let samples = buffer.int16ChannelData?[0], buffer.frameLength > 0 else {
-            return
+            return -80
         }
 
         var sum: Double = 0
@@ -202,9 +222,12 @@ final class AudioRecorder {
 
         let rms = sqrt(sum / Double(buffer.frameLength))
         let db = rms > 0 ? Float(20 * log10(rms)) : -80
+        return max(-80, min(0, db))
+    }
 
+    private func updatePower(_ db: Float) {
         stateLock.lock()
-        latestPower = max(-80, min(0, db))
+        latestPower = db
         stateLock.unlock()
     }
 
@@ -219,6 +242,7 @@ struct RecordingChunk: Sendable {
     let url: URL
     let index: Int
     let duration: TimeInterval
+    let peakPower: Float
 }
 
 enum AudioRecorderError: LocalizedError {
