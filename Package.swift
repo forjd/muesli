@@ -18,9 +18,6 @@ let package = Package(
             name: "Muesli",
             dependencies: [
                 .product(name: "FluidAudio", package: "FluidAudio")
-            ],
-            resources: [
-                .copy("Resources/parakeet_transcribe.py")
             ]
         )
     ]

@@ -10,17 +10,11 @@ final class TranscriptionStore: ObservableObject {
     @Published var isBusy = false
     @Published var currentAudioLevel: Float = -80
     @Published var selectedModel: ParakeetModel = .v3
-    @Published var selectedBackend: ParakeetBackend = .fluidAudio {
-        didSet {
-            UserDefaults.standard.set(selectedBackend.rawValue, forKey: Self.backendDefaultsKey)
-            refreshWorkerHealth()
-        }
-    }
     @Published var statusMessage = "Ready"
     @Published var isWarmingModel = false
     @Published var recordingElapsed: TimeInterval = 0
     @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
-    @Published var workerHealth: WorkerHealth?
+    @Published var transcriberHealth: TranscriberHealth?
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
@@ -32,13 +26,8 @@ final class TranscriptionStore: ObservableObject {
     private var saveTask: Task<Void, Never>?
     private var liveChunkTasks: [Task<Void, Never>] = []
     private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
-    private static let backendDefaultsKey = "selectedParakeetBackend"
 
     init() {
-        if let rawBackend = UserDefaults.standard.string(forKey: Self.backendDefaultsKey),
-           let backend = ParakeetBackend(rawValue: rawBackend) {
-            selectedBackend = backend
-        }
         sessions = persistence.load()
         normalizeInterruptedSessions()
         selectedSessionID = sessions.first?.id
@@ -73,9 +62,7 @@ final class TranscriptionStore: ObservableObject {
         }
 
         do {
-            let backend = selectedBackend
-            let chunkDuration: TimeInterval = backend == .fluidAudio ? 1 : 4
-            let url = try recorder.start(chunkDuration: chunkDuration) { [weak self] chunk in
+            let url = try recorder.start(chunkDuration: 1) { [weak self] chunk in
                 Task { @MainActor [weak self] in
                     self?.handleLiveChunk(chunk)
                 }
@@ -88,7 +75,7 @@ final class TranscriptionStore: ObservableObject {
             activeRecordingURL = url
             isRecording = true
             statusMessage = "Recording..."
-            try await transcriber.startStreaming(sessionID: session.id, model: selectedModel, backend: backend)
+            try await transcriber.startStreaming(sessionID: session.id, model: selectedModel)
             scheduleSave()
             startMetering()
             startElapsedTimer()
@@ -116,9 +103,8 @@ final class TranscriptionStore: ObservableObject {
                sessions[index].status == .recording {
                 sessions[index].status = .finalizing
             }
-            let backend = selectedBackend
             Task {
-                await transcriber.finishStreaming(sessionID: activeSessionID, backend: backend)
+                await transcriber.finishStreaming(sessionID: activeSessionID)
             }
             scheduleSave()
             return activeSessionID
@@ -158,15 +144,14 @@ final class TranscriptionStore: ObservableObject {
         sessions[index].status = .transcribing
         sessions[index].errorMessage = nil
         sessions[index].model = selectedModel
-        statusMessage = "Transcribing with \(selectedModel.label) via \(selectedBackend.label)..."
+        statusMessage = "Transcribing with \(selectedModel.label)..."
         scheduleSave()
 
         let audioURL = sessions[index].audioURL
         let model = selectedModel
-        let backend = selectedBackend
 
         do {
-            let result = try await transcriber.transcribe(audioURL: audioURL, model: model, backend: backend)
+            let result = try await transcriber.transcribe(audioURL: audioURL, model: model)
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                 sessions[updatedIndex].status = .complete
                 let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,37 +192,23 @@ final class TranscriptionStore: ObservableObject {
         guard isRecording, let activeSessionID else { return }
 
         let model = selectedModel
-        let backend = selectedBackend
         liveChunkStats[activeSessionID, default: LiveChunkStats()].submitted += 1
         statusMessage = "Transcribing chunk \(chunk.index)..."
         let task = Task { [weak self] in
             guard let self else { return }
 
             do {
-                if backend == .fluidAudio {
-                    if let result = try await self.transcriber.streamChunk(sessionID: activeSessionID, chunkURL: chunk.url, model: model, backend: backend) {
-                        await MainActor.run {
-                            self.replaceLiveTranscript(
-                                result,
-                                sessionID: activeSessionID,
-                                chunkIndex: chunk.index
-                            )
-                        }
-                    } else {
-                        await MainActor.run {
-                            self.liveChunkStats[activeSessionID, default: LiveChunkStats()].completed += 1
-                        }
+                if let result = try await self.transcriber.streamChunk(sessionID: activeSessionID, chunkURL: chunk.url, model: model) {
+                    await MainActor.run {
+                        self.replaceLiveTranscript(
+                            result,
+                            sessionID: activeSessionID,
+                            chunkIndex: chunk.index
+                        )
                     }
                 } else {
-                    let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: model, backend: backend)
                     await MainActor.run {
-                        self.appendLiveTranscript(
-                            result.text,
-                            sessionID: activeSessionID,
-                            chunkIndex: chunk.index,
-                            startTime: chunk.startTime,
-                            endTime: chunk.endTime
-                        )
+                        self.liveChunkStats[activeSessionID, default: LiveChunkStats()].completed += 1
                     }
                 }
             } catch {
@@ -249,45 +220,6 @@ final class TranscriptionStore: ObservableObject {
             }
         }
         liveChunkTasks.append(task)
-    }
-
-    private func appendLiveTranscript(
-        _ text: String,
-        sessionID: TranscriptSession.ID,
-        chunkIndex: Int,
-        startTime: TimeInterval,
-        endTime: TimeInterval
-    ) {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        liveChunkStats[sessionID, default: LiveChunkStats()].completed += 1
-        if !trimmed.isEmpty {
-            if sessions[index].liveTranscript.isEmpty {
-                sessions[index].liveTranscript = trimmed
-            } else {
-                sessions[index].liveTranscript += " " + trimmed
-            }
-            sessions[index].segments.append(
-                TranscriptSegment(
-                    chunkIndex: chunkIndex,
-                    startTime: startTime,
-                    endTime: endTime,
-                    text: trimmed,
-                    source: .live
-                )
-            )
-
-            if sessions[index].finalTranscript.isEmpty {
-                sessions[index].transcript = sessions[index].liveTranscript
-            }
-        }
-
-        if isRecording, sessionID == activeSessionID {
-            statusMessage = "Live transcript updated from chunk \(chunkIndex)."
-        }
-
-        scheduleSave()
     }
 
     private func replaceLiveTranscript(
@@ -370,15 +302,10 @@ final class TranscriptionStore: ObservableObject {
                 guard let self else { return }
 
                 do {
-                    let result = try await self.transcriber.transcribe(audioURL: chunk.url, model: self.selectedModel, backend: self.selectedBackend)
-                    await MainActor.run {
-                        self.appendLiveTranscript(
-                            result.text,
-                            sessionID: sessionID,
-                            chunkIndex: chunk.index,
-                            startTime: chunk.startTime,
-                            endTime: chunk.endTime
-                        )
+                    if let result = try await self.transcriber.streamChunk(sessionID: sessionID, chunkURL: chunk.url, model: self.selectedModel) {
+                        await MainActor.run {
+                            self.replaceLiveTranscript(result, sessionID: sessionID, chunkIndex: chunk.index)
+                        }
                     }
                 } catch {
                     await MainActor.run {
@@ -397,41 +324,34 @@ final class TranscriptionStore: ObservableObject {
 
         isWarmingModel = true
         let model = selectedModel
-        let backend = selectedBackend
-        statusMessage = "Warming \(model.label) via \(backend.label)..."
+        statusMessage = "Warming \(model.label)..."
 
         do {
-            try await transcriber.preload(model: model, backend: backend)
-            if selectedModel == model, selectedBackend == backend {
-                statusMessage = "\(model.label) is ready via \(backend.label)."
+            try await transcriber.preload(model: model)
+            if selectedModel == model {
+                statusMessage = "\(model.label) is ready."
             }
         } catch {
             statusMessage = error.localizedDescription
         }
 
         isWarmingModel = false
-        refreshWorkerHealth()
+        refreshTranscriberHealth()
     }
 
-    func restartWorker() async {
-        await transcriber.stopWorker()
-        workerHealth = nil
-        statusMessage = "Restarting worker..."
+    func resetTranscriber() async {
+        await transcriber.reset()
+        transcriberHealth = nil
+        statusMessage = "Resetting transcriber..."
         await prepareTranscriber()
     }
 
-    func refreshWorkerHealth() {
+    func refreshTranscriberHealth() {
         Task { [weak self] in
             guard let self else { return }
-            do {
-                let health = try await self.transcriber.health(backend: self.selectedBackend)
-                await MainActor.run {
-                    self.workerHealth = health
-                }
-            } catch {
-                await MainActor.run {
-                    self.statusMessage = error.localizedDescription
-                }
+            let health = await self.transcriber.health()
+            await MainActor.run {
+                self.transcriberHealth = health
             }
         }
     }
@@ -499,7 +419,7 @@ final class TranscriptionStore: ObservableObject {
         for model in ParakeetModel.allCases {
             let started = Date()
             do {
-                let result = try await transcriber.transcribe(audioURL: audioURL, model: model, backend: selectedBackend)
+                let result = try await transcriber.transcribe(audioURL: audioURL, model: model)
                 let duration = Date().timeIntervalSince(started)
                 if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                     sessions[updatedIndex].benchmarks.append(

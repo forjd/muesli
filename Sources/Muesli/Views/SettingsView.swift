@@ -17,16 +17,9 @@ struct SettingsView: View {
                 }
             }
 
-            Picker("Backend", selection: $store.selectedBackend) {
-                ForEach(ParakeetBackend.allCases) { backend in
-                    VStack(alignment: .leading) {
-                        Text(backend.label)
-                        Text(backend.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .tag(backend)
-                }
+            LabeledContent("Backend") {
+                Text("FluidAudio")
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

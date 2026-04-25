@@ -58,15 +58,13 @@ private struct RecorderHeaderView: View {
                         .controlSize(.small)
                 }
 
-                WorkerHealthMenu(store: store)
+                TranscriberHealthMenu(store: store)
             }
 
             HStack(spacing: 10) {
                 Image(systemName: "cpu")
                     .foregroundStyle(.secondary)
                 Text(store.selectedModel.label)
-                Text(store.selectedBackend.label)
-                    .foregroundStyle(.secondary)
                 Text(store.selectedModel.detail)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -87,39 +85,32 @@ private struct RecorderHeaderView: View {
     }
 }
 
-private struct WorkerHealthMenu: View {
+private struct TranscriberHealthMenu: View {
     @ObservedObject var store: TranscriptionStore
 
     var body: some View {
         Menu {
-            if let health = store.workerHealth {
-                Text(health.backend.label)
-
+            if let health = store.transcriberHealth {
                 Label(health.isRunning ? "Running" : "Stopped", systemImage: health.isRunning ? "checkmark.circle" : "xmark.circle")
 
-                if let processID = health.processID {
-                    Text("PID \(processID)")
-                }
-
-                if let logURL = health.logURL {
-                    Text(logURL.path)
-                        .textSelection(.enabled)
+                if let modelVersion = health.modelVersion {
+                    Text("Model \(modelVersion)")
                 }
             } else {
-                Text("Backend not checked")
+                Text("Transcriber not checked")
             }
 
             Divider()
 
             Button("Refresh", systemImage: "arrow.clockwise") {
-                store.refreshWorkerHealth()
+                store.refreshTranscriberHealth()
             }
 
-            Button("Restart", systemImage: "power") {
-                Task { await store.restartWorker() }
+            Button("Reset", systemImage: "power") {
+                Task { await store.resetTranscriber() }
             }
         } label: {
-            Label("Backend", systemImage: "server.rack")
+            Label("FluidAudio", systemImage: "waveform")
         }
         .disabled(store.isBusy || store.isRecording)
     }
@@ -252,7 +243,7 @@ private struct TranscriptTextView: View {
             } else {
                 TranscriptBlock(
                     title: session.finalTranscript.isEmpty ? "Transcript" : "Final",
-                    text: session.displayTranscript.isEmpty ? "Transcript will appear here after the Parakeet sidecar finishes." : session.displayTranscript,
+                    text: session.displayTranscript.isEmpty ? "Transcript will appear here after FluidAudio finishes." : session.displayTranscript,
                     isPlaceholder: session.displayTranscript.isEmpty
                 )
             }
