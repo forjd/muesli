@@ -126,19 +126,21 @@ development identity and is not notarized.
 
 ## GitHub Releases
 
-Releases are automated by GitHub Actions. To publish a new release:
+Releases are automated from Conventional Commits with
+[release-please](https://github.com/googleapis/release-please-action).
 
-```bash
-git tag -a v0.1.1 -m "Muesli 0.1.1"
-git push origin v0.1.1
-```
+The normal release flow is:
 
-The `Release` workflow runs tests, builds the signed macOS archive, uploads the
-zip and SHA-256 file as workflow artifacts, and creates the GitHub release.
+1. Merge feature and fix commits into `main` using Conventional Commit messages.
+2. GitHub Actions opens or updates a release PR that bumps `version.txt` and
+   updates `CHANGELOG.md`.
+3. Merge the release PR when ready.
+4. GitHub Actions creates the GitHub release, builds the signed macOS archive,
+   and uploads the zip plus SHA-256 file to the release.
 
-You can also run the workflow manually from GitHub Actions with a version number.
-Manual runs can either build artifacts only or publish a release for the current
-commit.
+You can also run the `Release` workflow manually from GitHub Actions with a
+version number. Manual runs can build artifacts only or publish a release for the
+current commit.
 
 ## Model Cache
 
