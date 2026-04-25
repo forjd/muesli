@@ -51,6 +51,13 @@ struct ContentView: View {
                 }
                 .help("Review microphone and Accessibility permissions")
             }
+
+            ToolbarItem {
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Open Muesli settings")
+            }
         }
         .onChange(of: store.selectedSessionID) { _, newValue in
             selectedSessionIDString = newValue?.uuidString
