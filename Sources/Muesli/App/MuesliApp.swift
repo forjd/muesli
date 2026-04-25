@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 @main
@@ -42,14 +43,15 @@ struct MuesliApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var store: TranscriptionStore?
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
     private var statusItem: NSStatusItem?
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyHandler: EventHandlerRef?
+    private let dictationHotKeyID = EventHotKeyID(signature: OSType("MUSL".fourCharCode), id: 1)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
-        installShortcutMonitors()
+        installGlobalHotKey()
         installStatusItem()
     }
 
@@ -58,38 +60,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
         }
-        if let localMonitor {
-            NSEvent.removeMonitor(localMonitor)
+        if let hotKeyHandler {
+            RemoveEventHandler(hotKeyHandler)
         }
     }
 
-    private func installShortcutMonitors() {
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            self?.handleShortcut(event)
-        }
+    private func installGlobalHotKey() {
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        let selfPointer = Unmanaged.passUnretained(self).toOpaque()
 
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if self?.handleShortcut(event) == true {
-                return nil
+        InstallEventHandler(
+            GetApplicationEventTarget(),
+            { _, event, userData in
+                guard let event, let userData else { return noErr }
+                var hotKeyID = EventHotKeyID()
+                let status = GetEventParameter(
+                    event,
+                    EventParamName(kEventParamDirectObject),
+                    EventParamType(typeEventHotKeyID),
+                    nil,
+                    MemoryLayout<EventHotKeyID>.size,
+                    nil,
+                    &hotKeyID
+                )
+                guard status == noErr, hotKeyID.id == 1 else { return noErr }
+
+                let appDelegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
+                appDelegate.toggleDictationPaste()
+                return noErr
+            },
+            1,
+            &eventType,
+            selfPointer,
+            &hotKeyHandler
+        )
+
+        let status = RegisterEventHotKey(
+            UInt32(kVK_ANSI_D),
+            UInt32(cmdKey | shiftKey),
+            dictationHotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+
+        if status != noErr {
+            Task { @MainActor [weak self] in
+                self?.store?.statusMessage = "Could not register Command-Shift-D hotkey."
             }
-            return event
         }
     }
 
-    @discardableResult
-    private func handleShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard flags.contains(.command), flags.contains(.shift), event.charactersIgnoringModifiers?.lowercased() == "d" else {
-            return false
-        }
-
+    private func toggleDictationPaste() {
         Task { @MainActor [weak self] in
             await self?.store?.toggleDictationPaste()
         }
-        return true
     }
 
     private func installStatusItem() {
@@ -101,8 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func statusItemClicked() {
-        Task { @MainActor [weak self] in
-            await self?.store?.toggleDictationPaste()
+        toggleDictationPaste()
+    }
+}
+
+private extension String {
+    var fourCharCode: FourCharCode {
+        utf8.reduce(0) { result, character in
+            (result << 8) + FourCharCode(character)
         }
     }
 }
