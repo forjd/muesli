@@ -2,6 +2,7 @@
 struct MuesliTestRunner {
     static func main() throws {
         try DictationHotKeyTests.run()
+        try DictationStorageModeTests.run()
         try RetentionPolicyTests.run()
         try SecureStorageTests.run()
         try SessionPersistenceTests.run()

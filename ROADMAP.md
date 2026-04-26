@@ -19,7 +19,7 @@ distribution features that depend on those foundations.
   in Keychain.
 - [x] Add retention controls for automatically deleting recordings, transcripts, or
   both after a configurable period.
-- [ ] Add a "never save audio" mode for dictation workflows. Temporary audio may be
+- [x] Add a "never save audio" mode for dictation workflows. Temporary audio may be
   used while recording/transcribing, but should be deleted after success,
   cancellation, and recoverable failures. Make transcript saving a separate
   choice so users can keep only the final transcript or keep nothing after

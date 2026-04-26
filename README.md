@@ -19,6 +19,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Saved recording history with transcript editing.
 - Encrypted local transcript metadata and stored recording files.
 - Configurable retention controls for recordings, transcripts, or both.
+- Dictation storage modes that can keep recordings, keep transcripts only, or
+  save nothing after paste/copy.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
@@ -109,6 +111,13 @@ Retention controls in Settings can automatically delete old recordings, clear
 old transcript text, or remove both after 1 to 365 days. Retention is off by
 default and is applied when the app starts, becomes active, or the retention
 setting changes.
+
+Dictation workflows have a separate "Save after dictation" setting. The default
+keeps the recording and transcript in history. "Never save audio" deletes the
+temporary audio and live chunks after transcription, including failure and
+cancellation paths, while keeping the transcript when one is available. "Save
+nothing" copies or pastes the transcript and then removes the dictation session
+from history.
 
 ## Usage
 

@@ -18,6 +18,14 @@ struct MenuBarView: View {
             }
             .disabled(store.isBusy && !store.isRecording)
 
+            if store.isRecording {
+                Button(role: .destructive) {
+                    store.cancelDictation()
+                } label: {
+                    Label("Cancel Recording", systemImage: "xmark.circle")
+                }
+            }
+
             Button {
                 Task { await store.toggleRecording() }
             } label: {

@@ -29,6 +29,16 @@ struct SettingsView: View {
             Section("Dictation") {
                 Toggle("Paste after hotkey dictation", isOn: $store.autoPasteDictation)
 
+                Picker("Save after dictation", selection: $store.dictationStorageMode) {
+                    ForEach(DictationStorageMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+
+                Text(store.dictationStorageMode.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
                 LabeledContent("Clipboard fallback") {
                     Text("Always copy before paste")
                         .foregroundStyle(.secondary)

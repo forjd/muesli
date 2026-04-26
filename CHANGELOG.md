@@ -8,6 +8,8 @@
   Keychain-backed local storage key.
 - Added configurable retention controls for automatically deleting old
   recordings, transcript text, or both.
+- Added dictation storage modes for never saving audio or saving nothing after
+  paste/copy.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 

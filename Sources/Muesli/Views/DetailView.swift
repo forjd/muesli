@@ -353,6 +353,12 @@ private struct RecordingActionBar: View {
             }
             .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
 
+            if store.isRecording, session.status == .recording {
+                Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
+                    store.cancelDictation()
+                }
+            }
+
             Spacer()
 
             Button("Copy", systemImage: "doc.on.doc") {
@@ -389,6 +395,12 @@ private struct RecordingActionBar: View {
                 Task { await store.transcribe(sessionID: session.id) }
             }
             .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
+
+            if store.isRecording, session.status == .recording {
+                Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
+                    store.cancelDictation()
+                }
+            }
 
             Spacer()
 

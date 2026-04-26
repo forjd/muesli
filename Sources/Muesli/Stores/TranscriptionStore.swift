@@ -11,6 +11,7 @@ final class TranscriptionStore: ObservableObject {
         static let autoPasteDictation = "autoPasteDictation"
         static let pasteDelay = "pasteDelay"
         static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
+        static let dictationStorageMode = "dictationStorageMode"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -53,6 +54,11 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(deleteAudioAfterTranscription, forKey: PreferenceKey.deleteAudioAfterTranscription)
         }
     }
+    @Published var dictationStorageMode: DictationStorageMode = .saveRecordingAndTranscript {
+        didSet {
+            UserDefaults.standard.set(dictationStorageMode.rawValue, forKey: PreferenceKey.dictationStorageMode)
+        }
+    }
     @Published var retentionPolicy = RetentionPolicy() {
         didSet {
             retentionPolicy.days = RetentionPolicy.clampedDays(retentionPolicy.days)
@@ -90,6 +96,7 @@ final class TranscriptionStore: ObservableObject {
     private var dictationTargetApp: NSRunningApplication?
     private var dictationTargetElement: AXUIElement?
     private var dictationTargetBundleIdentifier: String?
+    private var dictationSessionID: TranscriptSession.ID?
     private let longRecordingFinalPassLimit: TimeInterval = 30 * 60
 
     init() {
@@ -106,6 +113,10 @@ final class TranscriptionStore: ObservableObject {
         }
         if defaults.object(forKey: PreferenceKey.deleteAudioAfterTranscription) != nil {
             deleteAudioAfterTranscription = defaults.bool(forKey: PreferenceKey.deleteAudioAfterTranscription)
+        }
+        if let dictationStorageModeRawValue = defaults.string(forKey: PreferenceKey.dictationStorageMode),
+           let mode = DictationStorageMode(rawValue: dictationStorageModeRawValue) {
+            dictationStorageMode = mode
         }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
@@ -249,12 +260,14 @@ final class TranscriptionStore: ObservableObject {
         dictationTargetApp = NSWorkspace.shared.frontmostApplication
         dictationTargetBundleIdentifier = dictationTargetApp?.bundleIdentifier
         dictationTargetElement = Self.focusedAccessibilityElement()
+        dictationSessionID = nil
         let targetName = dictationTargetApp?.localizedName ?? "nil"
         let targetBundle = dictationTargetBundleIdentifier ?? "nil"
         let elementSummary = Self.describeAccessibilityElement(dictationTargetElement)
         Self.pasteLogger.info("Dictation hotkey start target=\(targetName, privacy: .public) bundle=\(targetBundle, privacy: .public) axElement=\(elementSummary, privacy: .public)")
         await startRecording()
         if isRecording {
+            dictationSessionID = activeSessionID
             statusMessage = "Dictation recording; press \(dictationHotKey.label) to paste."
         }
     }
@@ -265,6 +278,35 @@ final class TranscriptionStore: ObservableObject {
         guard let sessionID = stopRecording() else { return }
         await transcribe(sessionID: sessionID)
         pasteTranscript(sessionID: sessionID)
+        finalizeDictationStorage(sessionID: sessionID)
+    }
+
+    func cancelDictation() {
+        guard isRecording, let activeSessionID else { return }
+        recorder.stop()
+        liveChunkQueue?.cancel()
+        liveChunkQueue = nil
+        meterTask?.cancel()
+        elapsedTask?.cancel()
+        currentAudioLevel = -80
+        recordingElapsed = 0
+        isRecording = false
+        activeRecordingURL = nil
+        self.activeSessionID = nil
+
+        if dictationSessionID == activeSessionID {
+            deleteSession(sessionID: activeSessionID)
+            statusMessage = "Dictation cancelled and temporary audio deleted."
+        } else if let index = sessions.firstIndex(where: { $0.id == activeSessionID }) {
+            sessions[index].status = .recorded
+            updateRecordingMetadata(at: index)
+            statusMessage = "Recording cancelled."
+            scheduleSave()
+        }
+        dictationSessionID = nil
+        dictationTargetApp = nil
+        dictationTargetElement = nil
+        dictationTargetBundleIdentifier = nil
     }
 
     func transcribe(sessionID: TranscriptSession.ID) async {
@@ -927,6 +969,36 @@ final class TranscriptionStore: ObservableObject {
         }
         statusMessage = "Applied retention policy."
         scheduleSave()
+    }
+
+    private func finalizeDictationStorage(sessionID: TranscriptSession.ID) {
+        guard dictationSessionID == sessionID else { return }
+        dictationSessionID = nil
+
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        let mode = dictationStorageMode
+
+        if mode.deletesAudio {
+            deleteAudioFile(for: sessions[index])
+            deleteChunkFiles(for: sessions[index])
+            sessions[index].duration = nil
+            sessions[index].fileSize = nil
+            sessions[index].isAudioEncrypted = false
+        }
+
+        if mode.keepsTranscript {
+            statusMessage = mode.deletesAudio ? "Dictation transcript saved; temporary audio deleted." : statusMessage
+            scheduleSave()
+        } else {
+            let deletedSession = sessions.remove(at: index)
+            liveChunkStats[deletedSession.id] = nil
+            failedLiveChunks[deletedSession.id] = nil
+            if selectedSessionID == deletedSession.id {
+                selectedSessionID = sessions.first?.id
+            }
+            statusMessage = "Dictation pasted and removed from history."
+            scheduleSave()
+        }
     }
 
     private func startMetering() {
