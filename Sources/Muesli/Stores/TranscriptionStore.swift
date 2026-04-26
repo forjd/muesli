@@ -34,6 +34,8 @@ final class TranscriptionStore: ObservableObject {
 
     @Published var sessions: [TranscriptSession] = []
     @Published var selectedSessionID: TranscriptSession.ID?
+    @Published var sessionSearchText = ""
+    @Published var sessionStatusFilter: TranscriptStatusFilter = .all
     @Published var isRecording = false
     @Published var isBusy = false
     @Published var currentAudioLevel: Float = -80
@@ -240,6 +242,11 @@ final class TranscriptionStore: ObservableObject {
     var selectedSession: TranscriptSession? {
         guard let selectedSessionID else { return sessions.first }
         return sessions.first { $0.id == selectedSessionID }
+    }
+
+    var filteredSessions: [TranscriptSession] {
+        TranscriptSessionFilter(searchText: sessionSearchText, status: sessionStatusFilter)
+            .apply(to: sessions)
     }
 
     var recordingsDirectoryURL: URL {

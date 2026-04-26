@@ -5,6 +5,22 @@ struct SidebarView: View {
 
     var body: some View {
         List(selection: $store.selectedSessionID) {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Search transcripts", text: $store.sessionSearchText)
+                        .textFieldStyle(.roundedBorder)
+
+                    Picker("Status", selection: $store.sessionStatusFilter) {
+                        ForEach(TranscriptStatusFilter.allCases) { filter in
+                            Text(filter.label).tag(filter)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                }
+                .padding(.vertical, 4)
+            }
+
             Section("Recordings") {
                 if store.sessions.isEmpty {
                     ContentUnavailableView {
@@ -14,8 +30,16 @@ struct SidebarView: View {
                     }
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 18)
+                } else if store.filteredSessions.isEmpty {
+                    ContentUnavailableView {
+                        Label("No Matches", systemImage: "line.3.horizontal.decrease.circle")
+                    } description: {
+                        Text("Adjust search or filter.")
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 18)
                 } else {
-                    ForEach(store.sessions) { session in
+                    ForEach(store.filteredSessions) { session in
                         SidebarSessionRow(session: session)
                             .tag(session.id)
                             .contextMenu {
