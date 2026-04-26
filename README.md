@@ -172,6 +172,24 @@ General, Work, Code, Medical, and Legal profiles, and you can add project-specif
 profiles in Settings. Only the selected profile is applied as a correction layer
 after transcription.
 
+## Vocabulary Biasing Limits
+
+Muesli's replacement rules and custom dictionaries are currently post-transcript
+correction layers. They do not train, fine-tune, or directly teach the selected
+Parakeet TDT model.
+
+FluidAudio does expose a CTC-based custom vocabulary boosting pipeline. Its
+documentation describes this as vocabulary scoring and rescoring, not model
+training. For Muesli's current Parakeet TDT 0.6B v2/v3 models, that path requires
+loading a separate Parakeet CTC 110M encoder and rescoring a complete or confirmed
+audio window with token timings. FluidAudio notes that file or full-final-pass
+transcription is the best fit; streaming vocabulary boosting has reduced accuracy,
+especially for multi-word terms or terms that cross chunk boundaries.
+
+Until Muesli integrates that CTC rescoring path explicitly, dictionary profiles
+should be treated as deterministic cleanup after transcription. UI copy should not
+describe them as model training, adaptation, or guaranteed acoustic biasing.
+
 ## Development
 
 Build without launching:

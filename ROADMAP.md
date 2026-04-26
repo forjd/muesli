@@ -53,9 +53,13 @@ distribution features that depend on those foundations.
   unless FluidAudio or Parakeet exposes direct vocabulary biasing.
 - [x] Support profile-specific dictionaries so users can switch between general,
   work, code, medical, legal, or project-specific vocabularies.
-- [?] Investigate whether FluidAudio or the underlying Parakeet model supports any
+- [x] Investigate whether FluidAudio or the underlying Parakeet model supports any
   practical form of vocabulary biasing or adaptation, and document the limits
   before presenting it as model teaching in the UI.
+- [ ] Add optional FluidAudio CTC vocabulary boosting for final-pass transcription
+  using the selected dictionary profile, with clear download, latency, and
+  streaming-accuracy limits. Keep replacement rules as a fallback correction
+  layer.
 
 ## 4. File Workflows and Automation
 
@@ -109,8 +113,10 @@ distribution features that depend on those foundations.
 
 ## Open Questions
 
-- Can Parakeet/FluidAudio support vocabulary biasing directly, or should custom
-  vocabulary remain a correction layer after transcription?
+- FluidAudio supports CTC-based custom vocabulary boosting/rescoring, including
+  Parakeet TDT 0.6B via a separate CTC encoder. It is not model training or
+  adaptation, and Muesli dictionaries remain a post-transcription correction
+  layer until that rescoring path is implemented.
 - Should encrypted storage be enabled by default, optional, or tied to a privacy
   mode?
 - Which post-processing provider should be implemented first: Ollama for

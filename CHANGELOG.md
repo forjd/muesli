@@ -28,6 +28,8 @@
   terms, acronyms, and domain vocabulary.
 - Added profile-specific custom dictionaries with built-in General, Work, Code,
   Medical, and Legal profiles plus custom profile creation.
+- Documented FluidAudio vocabulary boosting limits and clarified that current
+  dictionaries are post-transcription correction layers, not model adaptation.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 
