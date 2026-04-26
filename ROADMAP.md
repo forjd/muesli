@@ -35,7 +35,7 @@ distribution features that depend on those foundations.
   permission, failed model load, failed paste, and unavailable hotkeys.
 - [x] Improve global dictation feedback when recording starts, stops, transcribes,
   fails, or pastes into another app.
-- [ ] Add optional sound effects for recording start, stop, cancellation, and
+- [x] Add optional sound effects for recording start, stop, cancellation, and
   failure states.
 - [ ] Add configurable recording modes for toggle, push-to-talk, and one-shot
   dictation workflows.

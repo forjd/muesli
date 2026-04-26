@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AudioToolbox
 import AVFoundation
 import Foundation
 import OSLog
@@ -14,6 +15,7 @@ final class TranscriptionStore: ObservableObject {
         static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
         static let dictationStorageMode = "dictationStorageMode"
         static let offlineMode = "offlineMode"
+        static let soundEffectsEnabled = "soundEffectsEnabled"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -69,6 +71,11 @@ final class TranscriptionStore: ObservableObject {
             if offlineMode {
                 Task { await prepareTranscriber() }
             }
+        }
+    }
+    @Published var soundEffectsEnabled = false {
+        didSet {
+            UserDefaults.standard.set(soundEffectsEnabled, forKey: PreferenceKey.soundEffectsEnabled)
         }
     }
     @Published var retentionPolicy = RetentionPolicy() {
@@ -132,6 +139,9 @@ final class TranscriptionStore: ObservableObject {
         }
         if defaults.object(forKey: PreferenceKey.offlineMode) != nil {
             offlineMode = defaults.bool(forKey: PreferenceKey.offlineMode)
+        }
+        if defaults.object(forKey: PreferenceKey.soundEffectsEnabled) != nil {
+            soundEffectsEnabled = defaults.bool(forKey: PreferenceKey.soundEffectsEnabled)
         }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
@@ -236,7 +246,7 @@ final class TranscriptionStore: ObservableObject {
 
         if let activeSessionID, sessions.contains(where: { $0.id == activeSessionID }) {
             statusMessage = "Finalizing recording..."
-            latestFeedbackEvent = DictationFeedbackEvent(title: "Recording Stopped", detail: "Finalizing audio before transcription.", kind: .recordingStopped)
+            publishFeedback(title: "Recording Stopped", detail: "Finalizing audio before transcription.", kind: .recordingStopped)
             self.activeRecordingURL = nil
             self.activeSessionID = nil
             if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
@@ -324,11 +334,12 @@ final class TranscriptionStore: ObservableObject {
 
         if dictationSessionID == activeSessionID {
             deleteSession(sessionID: activeSessionID)
-            statusMessage = "Dictation cancelled and temporary audio deleted."
+            publishFeedback(title: "Recording Cancelled", detail: "Dictation cancelled and temporary audio deleted.", kind: .failed)
         } else if let index = sessions.firstIndex(where: { $0.id == activeSessionID }) {
             sessions[index].status = .recorded
             updateRecordingMetadata(at: index)
             statusMessage = "Recording cancelled."
+            playFeedbackSound(for: .failed)
             scheduleSave()
         }
         dictationSessionID = nil
@@ -354,6 +365,7 @@ final class TranscriptionStore: ObservableObject {
         updateRecordingMetadata(at: index)
         statusMessage = "Transcribing with \(selectedModel.label)..."
         latestFeedbackEvent = DictationFeedbackEvent(title: "Transcribing", detail: "Converting speech with \(selectedModel.label).", kind: .transcribing)
+        playFeedbackSound(for: .transcribing)
         scheduleSave()
 
         let model = selectedModel
@@ -731,6 +743,7 @@ final class TranscriptionStore: ObservableObject {
     private func publishFeedback(title: String, detail: String, kind: DictationFeedbackKind) {
         statusMessage = detail
         latestFeedbackEvent = DictationFeedbackEvent(title: title, detail: detail, kind: kind)
+        playFeedbackSound(for: kind)
 
         guard !NSApp.isActive else { return }
         Task {
@@ -748,6 +761,11 @@ final class TranscriptionStore: ObservableObject {
             let request = UNNotificationRequest(identifier: "muesli.dictation.\(UUID().uuidString)", content: content, trigger: nil)
             try? await center.add(request)
         }
+    }
+
+    private func playFeedbackSound(for kind: DictationFeedbackKind) {
+        guard soundEffectsEnabled else { return }
+        AudioServicesPlaySystemSound(kind.systemSoundID)
     }
 
     func reportHotKeyUnavailable(_ detail: String) {

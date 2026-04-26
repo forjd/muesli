@@ -1,3 +1,4 @@
+import AudioToolbox
 import Foundation
 
 struct DictationFeedbackEvent: Identifiable, Hashable {
@@ -27,6 +28,21 @@ enum DictationFeedbackKind: String, Hashable {
             "exclamationmark.triangle.fill"
         case .pasted:
             "text.insert"
+        }
+    }
+
+    var systemSoundID: SystemSoundID {
+        switch self {
+        case .recordingStarted:
+            1113
+        case .recordingStopped:
+            1114
+        case .transcribing:
+            1103
+        case .failed:
+            1053
+        case .pasted:
+            1104
         }
     }
 }

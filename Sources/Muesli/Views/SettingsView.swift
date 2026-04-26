@@ -39,6 +39,12 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
+                Toggle("Sound effects", isOn: $store.soundEffectsEnabled)
+
+                Text("Play short system sounds for recording start, stop, cancellation, failure, and paste feedback.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
                 LabeledContent("Clipboard fallback") {
                     Text("Always copy before paste")
                         .foregroundStyle(.secondary)

@@ -26,6 +26,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Actionable issue banners for permission, model, paste, and hotkey failures.
 - Global dictation feedback through menu-bar events and macOS notifications when
   Muesli is in the background.
+- Optional sound effects for dictation start, stop, cancellation, failure, and
+  paste feedback.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
