@@ -565,30 +565,13 @@ private struct TranscriptTextView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if !session.finalTranscript.isEmpty && !session.liveTranscript.isEmpty && session.finalTranscript != session.liveTranscript {
-                TranscriptBlock(
-                    sessionID: session.id,
-                    title: "Final",
-                    text: session.finalTranscript,
-                    isPlaceholder: false,
-                    store: store
-                )
-                TranscriptBlock(
-                    sessionID: session.id,
-                    title: "Live",
-                    text: session.liveTranscript,
-                    isPlaceholder: false,
-                    store: store
-                )
-            } else {
-                TranscriptBlock(
-                    sessionID: session.id,
-                    title: session.finalTranscript.isEmpty ? "Transcript" : "Final",
-                    text: session.displayTranscript.isEmpty ? "Transcript will appear here after FluidAudio finishes." : session.displayTranscript,
-                    isPlaceholder: session.displayTranscript.isEmpty,
-                    store: store
-                )
-            }
+            TranscriptBlock(
+                sessionID: session.id,
+                title: "Transcript",
+                text: session.displayTranscript.isEmpty ? "Transcript will appear here after FluidAudio finishes." : session.displayTranscript,
+                isPlaceholder: session.displayTranscript.isEmpty,
+                store: store
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
