@@ -63,6 +63,13 @@
 - Improved first-run setup with inline model, offline mode, and hotkey controls
   in the readiness check.
 
+## [0.3.0](https://github.com/forjd/muesli/compare/v0.2.0...v0.3.0) (2026-04-26)
+
+
+### Features
+
+* improve distribution setup ([6bd21d0](https://github.com/forjd/muesli/commit/6bd21d00b68bf86cb6264a5750fc59df0eca4dac))
+
 ## [0.2.0](https://github.com/forjd/muesli/compare/v0.1.2...v0.2.0) (2026-04-26)
 
 
