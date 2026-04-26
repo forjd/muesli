@@ -15,7 +15,6 @@ struct TranscriptExporter {
                 liveTranscript: session.liveTranscript,
                 finalTranscript: session.finalTranscript,
                 segments: session.segments,
-                benchmarks: session.benchmarks,
                 duration: session.duration,
                 fileSize: session.fileSize
             )
@@ -66,7 +65,6 @@ private struct TranscriptExportPayload: Encodable {
     let liveTranscript: String
     let finalTranscript: String
     let segments: [TranscriptSegment]
-    let benchmarks: [TranscriptionBenchmark]
     let duration: TimeInterval?
     let fileSize: Int64?
 }

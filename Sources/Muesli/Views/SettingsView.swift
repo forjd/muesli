@@ -143,7 +143,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes every saved recording, transcript, benchmark, and live chunk from Muesli. This cannot be undone.")
+            Text("This removes every saved recording, transcript, and live chunk from Muesli. This cannot be undone.")
         }
     }
 }

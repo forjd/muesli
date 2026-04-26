@@ -843,43 +843,6 @@ final class TranscriptionStore: ObservableObject {
         scheduleSave()
     }
 
-    func benchmark(sessionID: TranscriptSession.ID) async {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
-
-        isBusy = true
-        selectedSessionID = sessionID
-        statusMessage = "Benchmarking models..."
-        sessions[index].benchmarks = []
-        scheduleSave()
-
-        let audioURL = sessions[index].audioURL
-
-        for model in ParakeetModel.allCases {
-            let started = Date()
-            do {
-                let result = try await transcriber.transcribe(audioURL: audioURL, model: model)
-                let duration = Date().timeIntervalSince(started)
-                if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
-                    sessions[updatedIndex].benchmarks.append(
-                        TranscriptionBenchmark(
-                            model: model,
-                            duration: duration,
-                            transcriptLength: result.text.count
-                        )
-                    )
-                }
-                statusMessage = "\(model.label): \(duration.formatted(.number.precision(.fractionLength(2))))s"
-            } catch {
-                statusMessage = "\(model.label) benchmark failed: \(error.localizedDescription)"
-            }
-            scheduleSave()
-        }
-
-        isBusy = false
-        statusMessage = "Benchmark complete."
-        scheduleSave()
-    }
-
     private func startMetering() {
         meterTask?.cancel()
         meterTask = Task { [weak self] in

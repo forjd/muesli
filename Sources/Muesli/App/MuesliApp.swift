@@ -45,13 +45,19 @@ struct MuesliApp: App {
         Settings {
             SettingsView(store: store)
         }
+
+        MenuBarExtra {
+            MenuBarView(store: store)
+        } label: {
+            Image(systemName: store.isRecording ? "mic.circle.fill" : "mic.circle")
+        }
+        .menuBarExtraStyle(.menu)
     }
 }
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var store: TranscriptionStore?
-    private var statusItem: NSStatusItem?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private var hotKeyCancellable: AnyCancellable?
@@ -65,7 +71,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         installGlobalHotKeyHandler()
-        installStatusItem()
     }
 
     func configure(store: TranscriptionStore) {
@@ -231,17 +236,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hybridHoldDidEngage = false
     }
 
-    private func installStatusItem() {
-        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.image = NSImage(systemSymbolName: "mic.circle", accessibilityDescription: "Muesli")
-        item.button?.target = self
-        item.button?.action = #selector(statusItemClicked)
-        statusItem = item
-    }
-
-    @objc private func statusItemClicked() {
-        toggleDictationPaste()
-    }
 }
 
 private extension String {

@@ -137,7 +137,7 @@ dictation into the app you were using.
 
 - Local Parakeet transcription through FluidAudio.
 - Parakeet TDT 0.6B v3 and v2 model selection.
-- Recording history with transcript editing, copy, delete, benchmark, and export.
+- Recording history with transcript editing, copy, delete, and export.
 - Global dictation hotkey with toggle, push-to-talk, hybrid, and custom shortcut support.
 - First-run readiness check for microphone, Accessibility, model, and hotkey state.
 

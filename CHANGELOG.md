@@ -21,7 +21,7 @@ Initial public release.
 - Native macOS SwiftUI voice-to-text app.
 - Local Parakeet transcription through FluidAudio.
 - Support for Parakeet TDT 0.6B v3 and v2.
-- Recording history with transcript editing, copy, delete, benchmark, and export.
+- Recording history with transcript editing, copy, delete, and export.
 - Global dictation hotkey with toggle, push-to-talk, and hybrid modes.
 - Custom dictation hotkeys.
 - Automatic clipboard copy and Accessibility-based paste into the previous app.

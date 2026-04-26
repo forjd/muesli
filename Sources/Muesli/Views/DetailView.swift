@@ -230,9 +230,6 @@ private struct TranscriptDetail: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
 
-                if !session.benchmarks.isEmpty {
-                    BenchmarkView(benchmarks: session.benchmarks)
-                }
             }
 
                 TranscriptTextView(session: session, store: store)
@@ -330,11 +327,6 @@ private struct RecordingActionBar: View {
                 }
             }
 
-            Button("Benchmark", systemImage: "speedometer") {
-                Task { await store.benchmark(sessionID: session.id) }
-            }
-            .disabled(store.isBusy || store.isRecording)
-
             Button("Transcribe", systemImage: "text.bubble") {
                 Task { await store.transcribe(sessionID: session.id) }
             }
@@ -372,11 +364,6 @@ private struct RecordingActionBar: View {
 
     private var compactLayout: some View {
         HStack(spacing: 10) {
-            Button("Benchmark", systemImage: "speedometer") {
-                Task { await store.benchmark(sessionID: session.id) }
-            }
-            .disabled(store.isBusy || store.isRecording)
-
             Button("Transcribe", systemImage: "text.bubble") {
                 Task { await store.transcribe(sessionID: session.id) }
             }
@@ -458,34 +445,6 @@ private struct StatusBadge: View {
         case .failed:
             .orange
         }
-    }
-}
-
-private struct BenchmarkView: View {
-    let benchmarks: [TranscriptionBenchmark]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Benchmarks")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
-                ForEach(benchmarks) { benchmark in
-                    GridRow {
-                        Text(benchmark.model.label)
-                        Text("\(benchmark.duration.formatted(.number.precision(.fractionLength(2))))s")
-                            .monospacedDigit()
-                        Text("\(benchmark.transcriptLength) chars")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .font(.callout)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

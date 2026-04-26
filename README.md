@@ -16,8 +16,8 @@ first load.
 - Live recording view with level meter and stabilized partial transcript.
 - Saved recording history with transcript editing.
 - One-shot global dictation using `Command-Shift-D`.
+- Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
-- Benchmark action for comparing model speed on a recording.
 - Development launcher that creates a stable local signing identity so macOS
   permissions survive rebuilds.
 
@@ -81,8 +81,8 @@ Run the app:
 ./script/build_and_run.sh
 ```
 
-Use the main window to record, transcribe, benchmark, export, copy, delete, and
-edit transcripts.
+Use the main window or menu bar item to record, transcribe, export, copy,
+delete, and edit transcripts.
 
 Use global dictation:
 
@@ -174,7 +174,7 @@ transcription should warm from the local cache.
 
 ```text
 Sources/Muesli/App/              App entry point and global hotkey wiring
-Sources/Muesli/Models/           Recording, transcript, benchmark models
+Sources/Muesli/Models/           Recording and transcript models
 Sources/Muesli/Services/         Audio recording, Parakeet, transcript helpers
 Sources/Muesli/Stores/           App state, persistence, exports, paste flow
 Sources/Muesli/Views/            SwiftUI interface
