@@ -10,6 +10,7 @@ struct MuesliTestRunner {
         try ReplacementRuleTests.run()
         try SecureStorageTests.run()
         try SessionPersistenceTests.run()
+        try MuesliCLIContractTests.run()
         try TranscriptExporterTests.run()
         try TranscriptSessionFilterTests.run()
         try VoiceActivityChunkRotationTests.run()
