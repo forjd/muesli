@@ -267,6 +267,63 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func batchImportAudioFiles() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = AudioImportFormat.contentTypes
+        panel.message = "Choose audio files to copy into Muesli and transcribe."
+
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+
+        Task {
+            await importAudioFiles(at: panel.urls, transcribeAfterImport: true)
+        }
+    }
+
+    func importAudioFiles(at sourceURLs: [URL], transcribeAfterImport: Bool = false) async {
+        guard !isBusy, !isRecording else { return }
+        guard !sourceURLs.isEmpty else { return }
+
+        var importedIDs: [TranscriptSession.ID] = []
+        var failures: [String] = []
+
+        isBusy = true
+        for (offset, sourceURL) in sourceURLs.enumerated() {
+            statusMessage = "Importing \(offset + 1) of \(sourceURLs.count)..."
+            guard AudioImportFormat.isSupported(sourceURL) else {
+                failures.append("\(sourceURL.lastPathComponent): unsupported format")
+                continue
+            }
+
+            do {
+                let importedURL = try copyImportedAudio(from: sourceURL)
+                let session = TranscriptSession(audioURL: importedURL, model: selectedModel, status: .recorded)
+                sessions.insert(session, at: 0)
+                selectedSessionID = session.id
+                updateRecordingMetadata(at: 0)
+                importedIDs.append(session.id)
+                scheduleSave()
+            } catch {
+                failures.append("\(sourceURL.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        isBusy = false
+
+        if transcribeAfterImport {
+            for (offset, sessionID) in importedIDs.enumerated() {
+                statusMessage = "Transcribing import \(offset + 1) of \(importedIDs.count)..."
+                await transcribe(sessionID: sessionID)
+            }
+        }
+
+        if failures.isEmpty {
+            statusMessage = "Imported \(importedIDs.count) audio file\(importedIDs.count == 1 ? "" : "s")."
+        } else {
+            statusMessage = "Imported \(importedIDs.count); \(failures.count) failed. \(failures.prefix(2).joined(separator: " "))"
+        }
+    }
+
     func importAudioFile(at sourceURL: URL, transcribeAfterImport: Bool = false) async {
         guard !isBusy, !isRecording else { return }
         guard AudioImportFormat.isSupported(sourceURL) else {
@@ -1296,6 +1353,45 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func batchExportVisibleTranscripts(format: TranscriptExportFormat) {
+        let exportableSessions = filteredSessions.filter { !$0.displayTranscript.isEmpty }
+        guard !exportableSessions.isEmpty else {
+            statusMessage = "No visible transcripts to export."
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder for exported transcripts."
+
+        guard panel.runModal() == .OK, let outputDirectory = panel.url else { return }
+
+        let urls = BatchExportPlanner.destinationURLs(
+            for: exportableSessions,
+            format: format,
+            outputDirectory: outputDirectory
+        )
+        var failures: [String] = []
+
+        for session in exportableSessions {
+            guard let url = urls[session.id] else { continue }
+            do {
+                try exportData(for: session, format: format).write(to: url, options: [.atomic])
+            } catch {
+                failures.append("\(url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+
+        if failures.isEmpty {
+            statusMessage = "Exported \(exportableSessions.count) transcript\(exportableSessions.count == 1 ? "" : "s")."
+        } else {
+            statusMessage = "Exported \(exportableSessions.count - failures.count); \(failures.count) failed. \(failures.prefix(2).joined(separator: " "))"
+        }
+    }
+
     func deleteSession(sessionID: TranscriptSession.ID) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let session = sessions.remove(at: index)
@@ -1502,9 +1598,7 @@ final class TranscriptionStore: ObservableObject {
     }
 
     private func exportFilename(for session: TranscriptSession, format: TranscriptExportFormat) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        return "muesli-\(formatter.string(from: session.createdAt)).\(format.fileExtension)"
+        "\(BatchExportPlanner.exportBaseName(for: session)).\(format.fileExtension)"
     }
 
     private func exportData(for session: TranscriptSession, format: TranscriptExportFormat) throws -> Data {

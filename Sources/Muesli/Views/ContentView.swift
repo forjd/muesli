@@ -47,13 +47,43 @@ struct ContentView: View {
                 .disabled(store.latestRecordingURL == nil || store.isBusy)
                 .keyboardShortcut("t", modifiers: [.command])
 
-                Button {
-                    store.importAudioFile()
+                Menu {
+                    Button("Import Audio File", systemImage: "square.and.arrow.down") {
+                        store.importAudioFile()
+                    }
+
+                    Button("Batch Import Audio", systemImage: "tray.and.arrow.down") {
+                        store.batchImportAudioFiles()
+                    }
+
+                    Divider()
+
+                    Menu("Export Visible", systemImage: "square.and.arrow.up") {
+                        Button("Text") {
+                            store.batchExportVisibleTranscripts(format: .text)
+                        }
+
+                        Button("Markdown") {
+                            store.batchExportVisibleTranscripts(format: .markdown)
+                        }
+
+                        Button("DOCX") {
+                            store.batchExportVisibleTranscripts(format: .docx)
+                        }
+
+                        Button("JSON") {
+                            store.batchExportVisibleTranscripts(format: .json)
+                        }
+
+                        Button("SRT") {
+                            store.batchExportVisibleTranscripts(format: .srt)
+                        }
+                    }
                 } label: {
-                    Label("Import Audio", systemImage: "square.and.arrow.down")
+                    Label("Files", systemImage: "folder")
                 }
                 .labelStyle(.iconOnly)
-                .help("Import an audio file")
+                .help("Import and export files")
                 .disabled(store.isBusy || store.isRecording)
             }
 
