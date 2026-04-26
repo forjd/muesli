@@ -6,6 +6,8 @@
   planned local and remote post-processing privacy states.
 - Encrypted saved transcript metadata and stored recording files with a
   Keychain-backed local storage key.
+- Added configurable retention controls for automatically deleting old
+  recordings, transcript text, or both.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 

@@ -18,6 +18,7 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Live recording view with level meter and stabilized partial transcript.
 - Saved recording history with transcript editing.
 - Encrypted local transcript metadata and stored recording files.
+- Configurable retention controls for recordings, transcripts, or both.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
@@ -103,6 +104,11 @@ recording is deleted by the "Delete raw audio after transcription" setting. Live
 chunk files are deleted after transcription. The local storage encryption key is
 generated per install and stored in Keychain. The recordings folder is visible
 in Settings and can be opened from the app.
+
+Retention controls in Settings can automatically delete old recordings, clear
+old transcript text, or remove both after 1 to 365 days. Retention is off by
+default and is applied when the app starts, becomes active, or the retention
+setting changes.
 
 ## Usage
 

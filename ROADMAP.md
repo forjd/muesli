@@ -17,7 +17,7 @@ distribution features that depend on those foundations.
 - [x] Encrypt local storage for recordings, transcripts, transcript metadata, and
   settings that may contain sensitive text. Store provider API keys separately
   in Keychain.
-- [ ] Add retention controls for automatically deleting recordings, transcripts, or
+- [x] Add retention controls for automatically deleting recordings, transcripts, or
   both after a configurable period.
 - [ ] Add a "never save audio" mode for dictation workflows. Temporary audio may be
   used while recording/transcribing, but should be deleted after success,

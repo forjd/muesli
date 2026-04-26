@@ -71,6 +71,7 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 permissions.refresh()
+                store.applyRetentionPolicy()
             }
         }
         .onAppear {

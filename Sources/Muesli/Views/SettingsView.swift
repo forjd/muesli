@@ -98,6 +98,29 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
+                Picker("Auto-delete", selection: $store.retentionPolicy.target) {
+                    ForEach(RetentionTarget.allCases) { target in
+                        Text(target.label).tag(target)
+                    }
+                }
+
+                Stepper(
+                    value: $store.retentionPolicy.days,
+                    in: 1...365,
+                    step: 1
+                ) {
+                    LabeledContent("After") {
+                        Text("\(store.retentionPolicy.days) day\(store.retentionPolicy.days == 1 ? "" : "s")")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                .disabled(!store.retentionPolicy.isEnabled)
+
+                Text(store.retentionPolicy.target.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
                 Divider()
 
                 Button("Delete All Recordings and Transcripts", systemImage: "trash", role: .destructive) {

@@ -11,6 +11,7 @@ final class TranscriptionStore: ObservableObject {
         static let autoPasteDictation = "autoPasteDictation"
         static let pasteDelay = "pasteDelay"
         static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
+        static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
     }
@@ -50,6 +51,15 @@ final class TranscriptionStore: ObservableObject {
     @Published var deleteAudioAfterTranscription = false {
         didSet {
             UserDefaults.standard.set(deleteAudioAfterTranscription, forKey: PreferenceKey.deleteAudioAfterTranscription)
+        }
+    }
+    @Published var retentionPolicy = RetentionPolicy() {
+        didSet {
+            retentionPolicy.days = RetentionPolicy.clampedDays(retentionPolicy.days)
+            if let data = try? JSONEncoder().encode(retentionPolicy) {
+                UserDefaults.standard.set(data, forKey: PreferenceKey.retentionPolicy)
+            }
+            applyRetentionPolicy()
         }
     }
     @Published var dictationHotKey: DictationHotKey = .commandShiftD {
@@ -97,6 +107,10 @@ final class TranscriptionStore: ObservableObject {
         if defaults.object(forKey: PreferenceKey.deleteAudioAfterTranscription) != nil {
             deleteAudioAfterTranscription = defaults.bool(forKey: PreferenceKey.deleteAudioAfterTranscription)
         }
+        if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
+           let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
+            retentionPolicy = policy
+        }
         if let hotKeyData = defaults.data(forKey: PreferenceKey.dictationHotKey),
            let hotKey = try? JSONDecoder().decode(DictationHotKey.self, from: hotKeyData) {
             dictationHotKey = hotKey
@@ -112,6 +126,7 @@ final class TranscriptionStore: ObservableObject {
         sessions = persistence.load()
         hydrateRecordingMetadata()
         normalizeInterruptedSessions()
+        applyRetentionPolicy()
         selectedSessionID = sessions.first?.id
     }
 
@@ -859,6 +874,58 @@ final class TranscriptionStore: ObservableObject {
         dictationTargetElement = nil
         dictationTargetBundleIdentifier = nil
         statusMessage = "Deleted all recordings and transcripts."
+        scheduleSave()
+    }
+
+    func applyRetentionPolicy(now: Date = Date()) {
+        guard retentionPolicy.isEnabled, !sessions.isEmpty else { return }
+
+        var changed = false
+        var retainedSessions: [TranscriptSession] = []
+
+        for var session in sessions {
+            guard retentionPolicy.isExpired(session, now: now) else {
+                retainedSessions.append(session)
+                continue
+            }
+
+            switch retentionPolicy.target {
+            case .off:
+                retainedSessions.append(session)
+            case .recordings:
+                deleteAudioFile(for: session)
+                deleteChunkFiles(for: session)
+                if session.fileSize != nil || session.duration != nil || session.isAudioEncrypted {
+                    session.fileSize = nil
+                    session.duration = nil
+                    session.isAudioEncrypted = false
+                }
+                retainedSessions.append(session)
+                changed = true
+            case .transcripts:
+                if !session.transcript.isEmpty || !session.liveTranscript.isEmpty || !session.finalTranscript.isEmpty || !session.segments.isEmpty {
+                    session.transcript = ""
+                    session.liveTranscript = ""
+                    session.finalTranscript = ""
+                    session.segments = []
+                    changed = true
+                }
+                retainedSessions.append(session)
+            case .recordingsAndTranscripts:
+                deleteFiles(for: session)
+                liveChunkStats[session.id] = nil
+                failedLiveChunks[session.id] = nil
+                changed = true
+            }
+        }
+
+        guard changed else { return }
+
+        sessions = retainedSessions
+        if let selectedSessionID, !sessions.contains(where: { $0.id == selectedSessionID }) {
+            self.selectedSessionID = sessions.first?.id
+        }
+        statusMessage = "Applied retention policy."
         scheduleSave()
     }
 
