@@ -51,7 +51,7 @@ distribution features that depend on those foundations.
 - [x] Add a custom dictionary for preferred words, names, product terms, acronyms,
   and domain-specific vocabulary. Treat the first version as a correction layer
   unless FluidAudio or Parakeet exposes direct vocabulary biasing.
-- [ ] Support profile-specific dictionaries so users can switch between general,
+- [x] Support profile-specific dictionaries so users can switch between general,
   work, code, medical, legal, or project-specific vocabularies.
 - [?] Investigate whether FluidAudio or the underlying Parakeet model supports any
   practical form of vocabulary biasing or adaptation, and document the limits

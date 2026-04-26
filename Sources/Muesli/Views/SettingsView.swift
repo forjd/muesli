@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var replacementFind = ""
     @State private var replacementReplace = ""
     @State private var dictionaryTerm = ""
+    @State private var dictionaryProfileName = ""
 
     var body: some View {
         Form {
@@ -250,6 +251,21 @@ struct SettingsView: View {
             }
 
             Section("Custom Dictionary") {
+                Picker("Profile", selection: $store.selectedCustomDictionaryProfileID) {
+                    ForEach(store.customDictionaryProfiles) { profile in
+                        Text(profile.name).tag(profile.id)
+                    }
+                }
+
+                HStack {
+                    TextField("New profile", text: $dictionaryProfileName)
+                    Button("Add Profile", systemImage: "person.crop.circle.badge.plus") {
+                        store.addCustomDictionaryProfile(name: dictionaryProfileName)
+                        dictionaryProfileName = ""
+                    }
+                    .disabled(dictionaryProfileName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
                 HStack {
                     TextField("Preferred word, name, acronym, or term", text: $dictionaryTerm)
                     Button("Add", systemImage: "plus") {
@@ -259,13 +275,13 @@ struct SettingsView: View {
                     .disabled(dictionaryTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
-                if store.customDictionaryTerms.isEmpty {
-                    Text("Dictionary terms are applied as a correction layer after transcription.")
+                if store.selectedCustomDictionaryTerms.isEmpty {
+                    Text("Terms in the selected profile are applied as a correction layer after transcription.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 } else {
                     List {
-                        ForEach(store.customDictionaryTerms) { term in
+                        ForEach(store.selectedCustomDictionaryTerms) { term in
                             HStack {
                                 Text(term.value)
                                 Spacer()
@@ -276,6 +292,22 @@ struct SettingsView: View {
                             }
                         }
                         .onDelete(perform: store.removeCustomDictionaryTerms)
+                    }
+                    .frame(minHeight: 90)
+                }
+
+                if store.customDictionaryProfiles.count > 1 {
+                    List {
+                        ForEach(store.customDictionaryProfiles) { profile in
+                            HStack {
+                                Text(profile.name)
+                                Spacer()
+                                Text("\(profile.terms.count)")
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                        }
+                        .onDelete(perform: store.removeCustomDictionaryProfiles)
                     }
                     .frame(minHeight: 90)
                 }

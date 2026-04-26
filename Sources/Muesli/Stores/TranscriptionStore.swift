@@ -18,6 +18,8 @@ final class TranscriptionStore: ObservableObject {
         static let soundEffectsEnabled = "soundEffectsEnabled"
         static let replacementRules = "replacementRules"
         static let customDictionaryTerms = "customDictionaryTerms"
+        static let customDictionaryProfiles = "customDictionaryProfiles"
+        static let selectedCustomDictionaryProfileID = "selectedCustomDictionaryProfileID"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -87,11 +89,16 @@ final class TranscriptionStore: ObservableObject {
             }
         }
     }
-    @Published var customDictionaryTerms: [CustomDictionaryTerm] = [] {
+    @Published var customDictionaryProfiles: [CustomDictionaryProfile] = CustomDictionaryProfile.defaultProfiles {
         didSet {
-            if let data = try? JSONEncoder().encode(customDictionaryTerms) {
-                UserDefaults.standard.set(data, forKey: PreferenceKey.customDictionaryTerms)
+            if let data = try? JSONEncoder().encode(customDictionaryProfiles) {
+                UserDefaults.standard.set(data, forKey: PreferenceKey.customDictionaryProfiles)
             }
+        }
+    }
+    @Published var selectedCustomDictionaryProfileID: CustomDictionaryProfile.ID = CustomDictionaryProfile.generalID {
+        didSet {
+            UserDefaults.standard.set(selectedCustomDictionaryProfileID.uuidString, forKey: PreferenceKey.selectedCustomDictionaryProfileID)
         }
     }
     @Published var lastManualReplacementSuggestion: ReplacementRule?
@@ -164,9 +171,24 @@ final class TranscriptionStore: ObservableObject {
            let rules = try? JSONDecoder().decode([ReplacementRule].self, from: replacementRulesData) {
             replacementRules = rules
         }
-        if let dictionaryData = defaults.data(forKey: PreferenceKey.customDictionaryTerms),
-           let terms = try? JSONDecoder().decode([CustomDictionaryTerm].self, from: dictionaryData) {
-            customDictionaryTerms = terms
+        if let profilesData = defaults.data(forKey: PreferenceKey.customDictionaryProfiles),
+           let profiles = try? JSONDecoder().decode([CustomDictionaryProfile].self, from: profilesData),
+           !profiles.isEmpty {
+            customDictionaryProfiles = profiles
+        } else if let dictionaryData = defaults.data(forKey: PreferenceKey.customDictionaryTerms),
+                  let terms = try? JSONDecoder().decode([CustomDictionaryTerm].self, from: dictionaryData),
+                  !terms.isEmpty {
+            customDictionaryProfiles = CustomDictionaryProfile.defaultProfiles
+            if let generalIndex = customDictionaryProfiles.firstIndex(where: { $0.id == CustomDictionaryProfile.generalID }) {
+                customDictionaryProfiles[generalIndex].terms = terms
+            }
+        }
+        if let selectedProfileIDString = defaults.string(forKey: PreferenceKey.selectedCustomDictionaryProfileID),
+           let selectedProfileID = UUID(uuidString: selectedProfileIDString),
+           customDictionaryProfiles.contains(where: { $0.id == selectedProfileID }) {
+            selectedCustomDictionaryProfileID = selectedProfileID
+        } else if let firstProfileID = customDictionaryProfiles.first?.id {
+            selectedCustomDictionaryProfileID = firstProfileID
         }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
@@ -1023,14 +1045,37 @@ final class TranscriptionStore: ObservableObject {
     func addCustomDictionaryTerm(_ value: String) {
         let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
-        guard customDictionaryTerms.contains(where: { $0.value.caseInsensitiveCompare(value) == .orderedSame }) == false else { return }
-        customDictionaryTerms.append(CustomDictionaryTerm(value: value))
+        guard let profileIndex = selectedCustomDictionaryProfileIndex else { return }
+        guard customDictionaryProfiles[profileIndex].terms.contains(where: { $0.value.caseInsensitiveCompare(value) == .orderedSame }) == false else { return }
+        customDictionaryProfiles[profileIndex].terms.append(CustomDictionaryTerm(value: value))
         statusMessage = "Dictionary term added."
     }
 
     func removeCustomDictionaryTerms(at offsets: IndexSet) {
+        guard let profileIndex = selectedCustomDictionaryProfileIndex else { return }
         for offset in offsets.sorted(by: >) {
-            customDictionaryTerms.remove(at: offset)
+            customDictionaryProfiles[profileIndex].terms.remove(at: offset)
+        }
+    }
+
+    func addCustomDictionaryProfile(name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let profile = CustomDictionaryProfile(name: name)
+        customDictionaryProfiles.append(profile)
+        selectedCustomDictionaryProfileID = profile.id
+        statusMessage = "Dictionary profile added."
+    }
+
+    func removeCustomDictionaryProfiles(at offsets: IndexSet) {
+        let sortedOffsets = offsets.sorted(by: >)
+        for offset in sortedOffsets where customDictionaryProfiles.indices.contains(offset) {
+            guard customDictionaryProfiles.count > 1 else { return }
+            customDictionaryProfiles.remove(at: offset)
+        }
+        if !customDictionaryProfiles.contains(where: { $0.id == selectedCustomDictionaryProfileID }),
+           let firstProfileID = customDictionaryProfiles.first?.id {
+            selectedCustomDictionaryProfileID = firstProfileID
         }
     }
 
@@ -1044,7 +1089,19 @@ final class TranscriptionStore: ObservableObject {
 
     private func applyReplacementRules(to text: String) -> String {
         let replaced = ReplacementRuleEngine(rules: replacementRules).apply(to: text)
-        return CustomDictionaryEngine(terms: customDictionaryTerms).apply(to: replaced)
+        return CustomDictionaryEngine(terms: selectedCustomDictionaryTerms).apply(to: replaced)
+    }
+
+    var selectedCustomDictionaryProfile: CustomDictionaryProfile? {
+        customDictionaryProfiles.first { $0.id == selectedCustomDictionaryProfileID }
+    }
+
+    var selectedCustomDictionaryTerms: [CustomDictionaryTerm] {
+        selectedCustomDictionaryProfile?.terms ?? []
+    }
+
+    private var selectedCustomDictionaryProfileIndex: Int? {
+        customDictionaryProfiles.firstIndex { $0.id == selectedCustomDictionaryProfileID }
     }
 
     func exportTranscript(sessionID: TranscriptSession.ID, format: TranscriptExportFormat) {

@@ -32,8 +32,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
   state, stop, and cancel controls.
 - Replacement rules for deterministic transcript cleanup and promoted manual
   edit suggestions.
-- Custom dictionary terms for preferred names, product terms, acronyms, and
-  domain vocabulary.
+- Profile-specific custom dictionaries for general, work, code, medical, legal,
+  or project-specific vocabulary.
 - One-shot global dictation using `Command-Shift-D`.
 - Configurable dictation behavior for toggle, push-to-talk, and hybrid workflows.
 - Menu bar controls for dictation, recording, model selection, and settings.
@@ -166,6 +166,11 @@ In Settings, the dictation hotkey behavior can be changed between Toggle,
 Push-to-Talk, and Hybrid. Toggle starts and stops with separate key presses,
 Push-to-Talk records only while the shortcut is held, and Hybrid supports either
 a tap-to-toggle or hold-to-talk flow.
+
+Custom dictionary terms are organized into selectable profiles. Muesli includes
+General, Work, Code, Medical, and Legal profiles, and you can add project-specific
+profiles in Settings. Only the selected profile is applied as a correction layer
+after transcription.
 
 ## Development
 

@@ -12,6 +12,30 @@ struct CustomDictionaryTerm: Identifiable, Hashable, Codable {
     }
 }
 
+struct CustomDictionaryProfile: Identifiable, Hashable, Codable {
+    let id: UUID
+    var name: String
+    var terms: [CustomDictionaryTerm]
+
+    init(id: UUID = UUID(), name: String, terms: [CustomDictionaryTerm] = []) {
+        self.id = id
+        self.name = name
+        self.terms = terms
+    }
+
+    static let generalID = UUID(uuidString: "00000000-0000-0000-0000-000000000101")!
+
+    static var defaultProfiles: [CustomDictionaryProfile] {
+        [
+            CustomDictionaryProfile(id: generalID, name: "General"),
+            CustomDictionaryProfile(name: "Work"),
+            CustomDictionaryProfile(name: "Code"),
+            CustomDictionaryProfile(name: "Medical"),
+            CustomDictionaryProfile(name: "Legal")
+        ]
+    }
+}
+
 struct CustomDictionaryEngine {
     var terms: [CustomDictionaryTerm]
 
