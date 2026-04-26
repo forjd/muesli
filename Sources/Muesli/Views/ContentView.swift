@@ -9,12 +9,14 @@ struct ContentView: View {
     @State private var isShowingReadinessCheck = false
 
     var body: some View {
-        NavigationSplitView {
+        HSplitView {
             SidebarView(store: store)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 280)
-        } detail: {
+                .frame(minWidth: 220, idealWidth: 280, maxWidth: 360, maxHeight: .infinity)
+
             DetailView(store: store)
+                .frame(minWidth: 520, maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(minWidth: 780, minHeight: 520)
         .toolbar {
             ToolbarItemGroup {
                 Picker("Model", selection: $store.selectedModel) {
@@ -68,6 +70,9 @@ struct ContentView: View {
         .onChange(of: store.selectedSessionID) { _, newValue in
             selectedSessionIDString = newValue?.uuidString
         }
+        .onChange(of: store.sessions.map(\.id)) { _, sessionIDs in
+            keepSelectionValid(sessionIDs: sessionIDs)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 permissions.refresh()
@@ -83,6 +88,7 @@ struct ContentView: View {
             if let selectedSessionIDString, let id = UUID(uuidString: selectedSessionIDString) {
                 store.selectedSessionID = id
             }
+            keepSelectionValid(sessionIDs: store.sessions.map(\.id))
         }
         .sheet(isPresented: $isShowingReadinessCheck) {
             ReadinessCheckView(
@@ -103,5 +109,21 @@ struct ContentView: View {
 
     private var readinessNeedsAttention: Bool {
         permissions.needsAttention || !store.modelLoadState.isReady
+    }
+
+    private func keepSelectionValid(sessionIDs: [TranscriptSession.ID]) {
+        guard !sessionIDs.isEmpty else {
+            if store.selectedSessionID != nil {
+                store.selectedSessionID = nil
+            }
+            return
+        }
+
+        if let selectedSessionID = store.selectedSessionID,
+           sessionIDs.contains(selectedSessionID) {
+            return
+        }
+
+        store.selectedSessionID = sessionIDs[0]
     }
 }

@@ -805,7 +805,7 @@ final class TranscriptionStore: ObservableObject {
         latestFeedbackEvent = DictationFeedbackEvent(title: title, detail: detail, kind: kind)
         playFeedbackSound(for: kind)
 
-        guard !NSApp.isActive else { return }
+        guard !NSApp.isActive, Self.canDeliverUserNotifications else { return }
         Task {
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
@@ -821,6 +821,10 @@ final class TranscriptionStore: ObservableObject {
             let request = UNNotificationRequest(identifier: "muesli.dictation.\(UUID().uuidString)", content: content, trigger: nil)
             try? await center.add(request)
         }
+    }
+
+    private static var canDeliverUserNotifications: Bool {
+        Bundle.main.bundleURL.pathExtension == "app"
     }
 
     private func playFeedbackSound(for kind: DictationFeedbackKind) {
