@@ -1,6 +1,7 @@
 @main
 struct MuesliTestRunner {
     static func main() throws {
+        try AppIssueTests.run()
         try DictationHotKeyTests.run()
         try DictationStorageModeTests.run()
         try RetentionPolicyTests.run()

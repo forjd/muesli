@@ -146,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if status != noErr {
             Task { @MainActor [weak self] in
-                self?.store?.statusMessage = "Could not register \(hotKey.label) hotkey."
+                self?.store?.reportHotKeyUnavailable("Could not register \(hotKey.label). Choose a different shortcut in Settings; another app may already be using it.")
             }
         }
     }

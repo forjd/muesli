@@ -23,6 +23,7 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
   save nothing after paste/copy.
 - Offline mode that blocks model downloads and future network features unless
   the selected model is already cached.
+- Actionable issue banners for permission, model, paste, and hotkey failures.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
@@ -126,6 +127,11 @@ transcribe with a selected model that is already cached locally. If the model is
 missing, the app shows a download-required state instead of starting FluidAudio
 and allowing a model download. Turn offline mode off once to cache a model, then
 turn it back on for offline use.
+
+When a recoverable setup issue occurs, Muesli shows an issue banner in the main
+window and menu bar with the relevant recovery action, such as opening
+Microphone or Accessibility settings, retrying model load, or changing an
+unavailable global hotkey.
 
 ## Usage
 

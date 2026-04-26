@@ -11,6 +11,22 @@ struct MenuBarView: View {
 
             Divider()
 
+            if let issue = store.activeIssue {
+                Button {
+                    openIssueAction(issue)
+                } label: {
+                    Label(issue.title, systemImage: issue.systemImage)
+                }
+
+                Button {
+                    store.dismissIssue()
+                } label: {
+                    Label("Dismiss Issue", systemImage: "xmark")
+                }
+
+                Divider()
+            }
+
             Button {
                 Task { await store.toggleDictationPaste() }
             } label: {
@@ -156,6 +172,19 @@ struct MenuBarView: View {
     private func openMainWindow() {
         openWindow(id: "main")
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func openIssueAction(_ issue: AppIssue) {
+        switch issue.kind {
+        case .microphonePermission:
+            store.openMicrophoneSettings()
+        case .accessibilityPermission, .paste:
+            store.openAccessibilitySettings()
+        case .modelLoad:
+            Task { await store.prepareTranscriber() }
+        case .hotKey:
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
     }
 
     private func formatElapsed(_ duration: TimeInterval) -> String {

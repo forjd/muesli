@@ -12,6 +12,13 @@ struct DetailView: View {
 
             Divider()
 
+            if let issue = store.activeIssue {
+                IssueBanner(issue: issue, store: store)
+                    .padding(.horizontal, 30)
+                    .padding(.vertical, 12)
+                Divider()
+            }
+
             if let session = store.selectedSession {
                 TranscriptDetail(session: session, store: store)
             } else {
@@ -19,6 +26,72 @@ struct DetailView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
+
+private struct IssueBanner: View {
+    let issue: AppIssue
+    @ObservedObject var store: TranscriptionStore
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: issue.systemImage)
+                .foregroundStyle(.orange)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(issue.title)
+                    .font(.headline)
+                Text(issue.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 16)
+
+            if let action = actionTitle {
+                Button(action.title, systemImage: action.systemImage) {
+                    performPrimaryAction()
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Button("Dismiss", systemImage: "xmark") {
+                store.dismissIssue()
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Dismiss")
+        }
+        .padding(14)
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var actionTitle: (title: String, systemImage: String)? {
+        switch issue.kind {
+        case .microphonePermission:
+            ("Open Settings", "gearshape")
+        case .accessibilityPermission, .paste:
+            ("Open Settings", "gearshape")
+        case .modelLoad:
+            ("Retry", "arrow.clockwise")
+        case .hotKey:
+            ("Settings", "gearshape")
+        }
+    }
+
+    private func performPrimaryAction() {
+        switch issue.kind {
+        case .microphonePermission:
+            store.openMicrophoneSettings()
+        case .accessibilityPermission, .paste:
+            store.openAccessibilitySettings()
+        case .modelLoad:
+            Task { await store.prepareTranscriber() }
+        case .hotKey:
+            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        }
     }
 }
 

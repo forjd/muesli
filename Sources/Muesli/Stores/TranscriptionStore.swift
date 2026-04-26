@@ -34,6 +34,7 @@ final class TranscriptionStore: ObservableObject {
         }
     }
     @Published var statusMessage = "Ready"
+    @Published var activeIssue: AppIssue?
     @Published var isWarmingModel = false
     @Published var modelLoadState: ModelLoadState = .idle
     @Published var recordingElapsed: TimeInterval = 0
@@ -182,6 +183,10 @@ final class TranscriptionStore: ObservableObject {
         let granted = await recorder.requestPermission()
         guard granted else {
             statusMessage = "Microphone permission was denied."
+            activeIssue = AppIssue(
+                kind: .microphonePermission,
+                detail: "Allow microphone access in System Settings, then return to Muesli and start recording again."
+            )
             return
         }
         guard await selectedModelIsAvailable() else {
@@ -206,8 +211,13 @@ final class TranscriptionStore: ObservableObject {
             scheduleSave()
             startMetering()
             startElapsedTimer()
+            activeIssue = nil
         } catch {
             statusMessage = error.localizedDescription
+            activeIssue = AppIssue(
+                kind: .microphonePermission,
+                detail: "Muesli could not start the microphone input: \(error.localizedDescription)"
+            )
         }
     }
 
@@ -597,10 +607,15 @@ final class TranscriptionStore: ObservableObject {
             if selectedModel == model {
                 modelLoadState = .ready(model.label)
                 statusMessage = "\(model.label) is ready."
+                activeIssue = nil
             }
         } catch {
             modelLoadState = .failed(error.localizedDescription)
             statusMessage = error.localizedDescription
+            activeIssue = AppIssue(
+                kind: .modelLoad,
+                detail: "The selected model could not be prepared: \(error.localizedDescription)"
+            )
         }
 
         isWarmingModel = false
@@ -674,6 +689,10 @@ final class TranscriptionStore: ObservableObject {
             dictationTargetElement = nil
             dictationTargetBundleIdentifier = nil
             statusMessage = "Copied transcript. Re-enable Muesli in Accessibility if auto-paste does not work."
+            activeIssue = AppIssue(
+                kind: .accessibilityPermission,
+                detail: "Muesli copied the transcript, but macOS Accessibility permission is required to paste into another app."
+            )
             return
         }
 
@@ -703,9 +722,31 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func reportHotKeyUnavailable(_ detail: String) {
+        statusMessage = detail
+        activeIssue = AppIssue(kind: .hotKey, detail: detail)
+    }
+
+    func dismissIssue() {
+        activeIssue = nil
+    }
+
+    func openMicrophoneSettings() {
+        openSettingsPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+    }
+
+    func openAccessibilitySettings() {
+        openSettingsPane("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+    }
+
     func openRecordingsFolder() {
         try? FileManager.default.createDirectory(at: recordingsDirectoryURL, withIntermediateDirectories: true)
         NSWorkspace.shared.open(recordingsDirectoryURL)
+    }
+
+    private func openSettingsPane(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     private static func focusedAccessibilityElement() -> AXUIElement? {
