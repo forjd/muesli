@@ -9,6 +9,8 @@ The app is intentionally local-first: recordings stay on disk, transcription run
 on-device, and FluidAudio caches the Parakeet Core ML model artifacts after the
 first load.
 
+See [ROADMAP.md](ROADMAP.md) for planned product directions.
+
 ## Features
 
 - Local Parakeet transcription through FluidAudio.

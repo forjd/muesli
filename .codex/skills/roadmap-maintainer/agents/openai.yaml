@@ -1,0 +1,7 @@
+interface:
+  display_name: "Roadmap Maintainer"
+  short_description: "Maintain roadmap order, status, and scope"
+  default_prompt: "Use $roadmap-maintainer to add and prioritize new roadmap ideas."
+
+policy:
+  allow_implicit_invocation: true
