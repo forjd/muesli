@@ -38,6 +38,14 @@
   transcription and deterministic cleanup.
 - Added optional fuzzy dictionary suggestions per profile, with transcript-level
   review before applying near-match replacements.
+- Added audio file import for existing WAV, M4A, MP3, AIFF, and CAF recordings.
+- Added Markdown, DOCX, and clipboard-template transcript exports.
+- Added search and status filtering across saved recordings and transcripts.
+- Added a JSON CLI command contract with `spec`, stable envelopes, warnings, and
+  actionable fix fields.
+- Added batch audio import and visible transcript batch export workflows.
+- Added first CLI workflows for file transcription, named dictionary profiles,
+  and file-based transcript export.
 
 ## [0.2.0](https://github.com/forjd/muesli/compare/v0.1.2...v0.2.0) (2026-04-26)
 

@@ -69,18 +69,18 @@ distribution features that depend on those foundations.
 
 ## 4. File Workflows and Automation
 
-- [ ] Add audio file import for transcribing existing recordings. Define supported
+- [x] Add audio file import for transcribing existing recordings. Define supported
   formats, whether imported files are copied into Muesli storage, and how
   imported audio follows encryption, retention, and never-save-audio settings.
-- [ ] Add richer export options for Markdown, DOCX, and clipboard templates.
-- [ ] Add search and filtering across saved recordings and transcripts.
-- [ ] Add a machine-readable JSON command contract for the CLI, including a
+- [x] Add richer export options for Markdown, DOCX, and clipboard templates.
+- [x] Add search and filtering across saved recordings and transcripts.
+- [x] Add a machine-readable JSON command contract for the CLI, including a
   `spec` command, stable success/error envelopes, schema version, warnings, and
   actionable `fix` fields for failures.
-- [ ] Add batch import and export for processing multiple recordings or transcripts,
+- [x] Add batch import and export for processing multiple recordings or transcripts,
   with progress reporting, partial failure handling, and optional
   post-processing.
-- [ ] Add a command-line interface for scripting transcription, export, and
+- [x] Add a command-line interface for scripting transcription, export, and
   automation workflows. The first version should support transcribing files,
   exporting transcripts, and using named profiles without requiring the main UI.
 

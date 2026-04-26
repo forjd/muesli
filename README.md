@@ -19,6 +19,7 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Voice-activity-driven live transcription chunks that prefer natural speech
   pauses and fall back to a maximum chunk length during continuous speech.
 - Saved recording history with transcript editing.
+- Audio file import for WAV, M4A, MP3, AIFF, and CAF recordings.
 - Encrypted local transcript metadata and stored recording files.
 - Configurable retention controls for recordings, transcripts, or both.
 - Dictation storage modes that can keep recordings, keep transcripts only, or
@@ -41,7 +42,11 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - One-shot global dictation using `Command-Shift-D`.
 - Configurable dictation behavior for toggle, push-to-talk, and hybrid workflows.
 - Menu bar controls for dictation, recording, model selection, and settings.
-- Export transcripts as plain text, JSON, or SRT.
+- Search and filter saved recordings and transcripts.
+- Export transcripts as plain text, Markdown, DOCX, JSON, or SRT.
+- Clipboard copy templates for plain transcript, Markdown, and notes.
+- Batch import audio files and batch export visible transcripts.
+- JSON CLI contract and file-based CLI transcription/export automation.
 - Development launcher that creates a stable local signing identity so macOS
   permissions survive rebuilds.
 
@@ -161,6 +166,11 @@ Run the app:
 Use the main window or menu bar item to record, transcribe, export, copy,
 delete, and edit transcripts.
 
+Use the Files toolbar menu to import one recording, batch import several audio
+files, or export the currently visible transcript list. Imported audio is copied
+into Muesli storage before transcription so retention and encrypted-storage
+rules apply to Muesli's copy, not the original source file.
+
 Use global dictation:
 
 1. Click into a text field in another app.
@@ -188,6 +198,22 @@ dictionary profile. When enabled, Muesli asks FluidAudio to run its CTC rescorin
 pipeline after the recording finishes. This can download an additional local CTC
 model the first time it runs, adds final-pass latency, and is not used for live
 streaming updates.
+
+## CLI
+
+Muesli exposes a JSON-oriented command surface through the executable:
+
+```bash
+swift run Muesli spec
+swift run Muesli transcribe recording.wav --profile Work --export md --output ./exports
+swift run Muesli export --format md --output ./exports --query meeting
+```
+
+Commands return stable JSON success or error envelopes with `schemaVersion`,
+`warnings`, and actionable `fix` fields. File-based `transcribe --export` works
+without opening the main UI. Exporting already-saved encrypted app history may
+require the signed app context; if the CLI cannot unlock it, it returns a JSON
+error instead of waiting for a keychain prompt.
 
 ## Vocabulary Biasing Limits
 
