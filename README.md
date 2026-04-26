@@ -21,6 +21,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Configurable retention controls for recordings, transcripts, or both.
 - Dictation storage modes that can keep recordings, keep transcripts only, or
   save nothing after paste/copy.
+- Offline mode that blocks model downloads and future network features unless
+  the selected model is already cached.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
@@ -118,6 +120,12 @@ temporary audio and live chunks after transcription, including failure and
 cancellation paths, while keeping the transcript when one is available. "Save
 nothing" copies or pastes the transcript and then removes the dictation session
 from history.
+
+Offline mode is available in Settings. When it is on, Muesli will only record or
+transcribe with a selected model that is already cached locally. If the model is
+missing, the app shows a download-required state instead of starting FluidAudio
+and allowing a model download. Turn offline mode off once to cache a model, then
+turn it back on for offline use.
 
 ## Usage
 

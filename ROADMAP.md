@@ -24,7 +24,7 @@ distribution features that depend on those foundations.
   cancellation, and recoverable failures. Make transcript saving a separate
   choice so users can keep only the final transcript or keep nothing after
   paste/export.
-- [ ] Add an explicit offline mode that prevents user content from leaving the
+- [x] Add an explicit offline mode that prevents user content from leaving the
   machine, blocks remote post-processing, and disables optional network features
   once required models are cached. Before models are cached, show a clear
   download exception instead of silently using the network.

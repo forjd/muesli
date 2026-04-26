@@ -59,14 +59,18 @@ struct ReadinessCheckView: View {
                     secondaryTitle: nil,
                     secondarySystemImage: nil
                 ) {
-                    Task { await store.prepareTranscriber() }
+                    if case .downloadRequired = store.modelLoadState {
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    } else {
+                        Task { await store.prepareTranscriber() }
+                    }
                 } secondaryAction: {}
 
                 ReadinessRow(
                     title: store.privacyMode.label,
                     detail: store.privacyMode.detail,
-                    systemImage: store.privacyMode.contentLeavesDevice ? "network" : "lock.shield",
-                    state: .ready(store.privacyMode.contentLeavesDevice ? "Remote" : "Local"),
+                    systemImage: store.offlineMode ? "wifi.slash" : (store.privacyMode.contentLeavesDevice ? "network" : "lock.shield"),
+                    state: .ready(store.offlineMode ? "Offline" : (store.privacyMode.contentLeavesDevice ? "Remote" : "Local")),
                     primaryTitle: nil,
                     primarySystemImage: nil,
                     secondaryTitle: nil,
@@ -138,6 +142,8 @@ struct ReadinessCheckView: View {
             .working("Loading")
         case .failed:
             .blocked("Failed")
+        case .downloadRequired:
+            .blocked("Download")
         case .idle:
             .attention("Not Loaded")
         }
@@ -149,6 +155,8 @@ struct ReadinessCheckView: View {
             nil
         case .loadingCached, .downloading:
             "Loading"
+        case .downloadRequired:
+            "Settings"
         case .failed:
             "Retry"
         case .idle:
@@ -162,6 +170,8 @@ struct ReadinessCheckView: View {
             nil
         case .loadingCached, .downloading:
             "hourglass"
+        case .downloadRequired:
+            "gearshape"
         case .failed:
             "arrow.clockwise"
         case .idle:

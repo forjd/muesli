@@ -12,6 +12,7 @@ final class TranscriptionStore: ObservableObject {
         static let pasteDelay = "pasteDelay"
         static let deleteAudioAfterTranscription = "deleteAudioAfterTranscription"
         static let dictationStorageMode = "dictationStorageMode"
+        static let offlineMode = "offlineMode"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -57,6 +58,14 @@ final class TranscriptionStore: ObservableObject {
     @Published var dictationStorageMode: DictationStorageMode = .saveRecordingAndTranscript {
         didSet {
             UserDefaults.standard.set(dictationStorageMode.rawValue, forKey: PreferenceKey.dictationStorageMode)
+        }
+    }
+    @Published var offlineMode = false {
+        didSet {
+            UserDefaults.standard.set(offlineMode, forKey: PreferenceKey.offlineMode)
+            if offlineMode {
+                Task { await prepareTranscriber() }
+            }
         }
     }
     @Published var retentionPolicy = RetentionPolicy() {
@@ -118,6 +127,9 @@ final class TranscriptionStore: ObservableObject {
            let mode = DictationStorageMode(rawValue: dictationStorageModeRawValue) {
             dictationStorageMode = mode
         }
+        if defaults.object(forKey: PreferenceKey.offlineMode) != nil {
+            offlineMode = defaults.bool(forKey: PreferenceKey.offlineMode)
+        }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
             retentionPolicy = policy
@@ -170,6 +182,9 @@ final class TranscriptionStore: ObservableObject {
         let granted = await recorder.requestPermission()
         guard granted else {
             statusMessage = "Microphone permission was denied."
+            return
+        }
+        guard await selectedModelIsAvailable() else {
             return
         }
 
@@ -316,6 +331,10 @@ final class TranscriptionStore: ObservableObject {
 
         isBusy = true
         selectedSessionID = sessionID
+        guard await selectedModelIsAvailable() else {
+            isBusy = false
+            return
+        }
         sessions[index].status = .transcribing
         sessions[index].errorMessage = nil
         sessions[index].model = selectedModel
@@ -564,6 +583,12 @@ final class TranscriptionStore: ObservableObject {
         isWarmingModel = true
         let model = selectedModel
         let isCached = await transcriber.isModelCached(model)
+        if offlineMode && !isCached {
+            modelLoadState = .downloadRequired(model.label)
+            statusMessage = "Offline mode is on. Connect once or turn off offline mode to download \(model.label)."
+            isWarmingModel = false
+            return
+        }
         modelLoadState = isCached ? .loadingCached(model.label) : .downloading(model.label)
         statusMessage = isCached ? "Loading cached \(model.label)..." : "Downloading \(model.label)..."
 
@@ -597,6 +622,17 @@ final class TranscriptionStore: ObservableObject {
                 self.transcriberHealth = health
             }
         }
+    }
+
+    private func selectedModelIsAvailable() async -> Bool {
+        guard offlineMode else { return true }
+        let model = selectedModel
+        guard await transcriber.isModelCached(model) else {
+            modelLoadState = .downloadRequired(model.label)
+            statusMessage = "Offline mode is on. \(model.label) must be downloaded before recording or transcription."
+            return false
+        }
+        return true
     }
 
     func copyTranscript(sessionID: TranscriptSession.ID) {
@@ -1099,6 +1135,7 @@ enum ModelLoadState: Hashable {
     case idle
     case loadingCached(String)
     case downloading(String)
+    case downloadRequired(String)
     case ready(String)
     case failed(String)
 
@@ -1110,6 +1147,8 @@ enum ModelLoadState: Hashable {
             "Loading \(model)"
         case let .downloading(model):
             "Downloading \(model)"
+        case let .downloadRequired(model):
+            "\(model) required"
         case let .ready(model):
             "\(model) ready"
         case .failed:
@@ -1125,6 +1164,8 @@ enum ModelLoadState: Hashable {
             "Using cached model files and warming Core ML."
         case .downloading:
             "Fetching model files once, then warming Core ML."
+        case .downloadRequired:
+            "Offline mode blocks model downloads. Turn it off once to cache the selected model."
         case .ready:
             "Loaded locally and ready for recording."
         case let .failed(message):

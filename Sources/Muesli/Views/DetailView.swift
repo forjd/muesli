@@ -39,7 +39,7 @@ private struct RecorderHeaderView: View {
 
                 Spacer()
 
-                PrivacyModeBadge(mode: store.privacyMode)
+                PrivacyModeBadge(mode: store.privacyMode, isOffline: store.offlineMode)
 
                 ModelLoadBadge(state: store.modelLoadState)
 
@@ -83,20 +83,21 @@ private struct RecorderHeaderView: View {
 
 private struct PrivacyModeBadge: View {
     let mode: PrivacyMode
+    let isOffline: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: mode.contentLeavesDevice ? "network" : "lock.shield.fill")
+            Image(systemName: isOffline ? "wifi.slash" : (mode.contentLeavesDevice ? "network" : "lock.shield.fill"))
                 .foregroundStyle(mode.contentLeavesDevice ? .orange : .green)
 
-            Text(mode.shortLabel)
+            Text(isOffline ? "Offline" : mode.shortLabel)
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
         }
         .padding(.horizontal, 11)
         .padding(.vertical, 6)
         .background(.thinMaterial, in: Capsule())
-        .help(mode.detail)
+        .help(isOffline ? "Network access is blocked after required models are cached." : mode.detail)
     }
 }
 
@@ -132,6 +133,8 @@ private struct ModelLoadBadge: View {
             "externaldrive.fill"
         case .downloading:
             "arrow.down.circle"
+        case .downloadRequired:
+            "icloud.slash"
         case .ready:
             "checkmark.circle.fill"
         case .failed:
@@ -147,6 +150,8 @@ private struct ModelLoadBadge: View {
             .blue
         case .downloading:
             .blue
+        case .downloadRequired:
+            .orange
         case .ready:
             .green
         case .failed:

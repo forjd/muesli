@@ -91,7 +91,7 @@ struct MenuBarView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
-            Label(store.privacyMode.label, systemImage: store.privacyMode.contentLeavesDevice ? "network" : "lock.shield")
+            Label(store.offlineMode ? "Offline local dictation" : store.privacyMode.label, systemImage: store.offlineMode ? "wifi.slash" : (store.privacyMode.contentLeavesDevice ? "network" : "lock.shield"))
                 .font(.caption)
                 .foregroundStyle(store.privacyMode.contentLeavesDevice ? .orange : .secondary)
                 .help(store.privacyMode.detail)

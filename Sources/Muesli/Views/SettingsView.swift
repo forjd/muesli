@@ -62,8 +62,14 @@ struct SettingsView: View {
             }
 
             Section("Privacy") {
+                Toggle("Offline mode", isOn: $store.offlineMode)
+
+                Text("Offline mode blocks model downloads and future remote features. If the selected model is not cached, Muesli will ask you to turn offline mode off before recording or transcribing.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
                 LabeledContent("Current mode") {
-                    Label(store.privacyMode.label, systemImage: store.privacyMode.contentLeavesDevice ? "network" : "lock.shield")
+                    Label(store.offlineMode ? "Offline local dictation" : store.privacyMode.label, systemImage: store.offlineMode ? "wifi.slash" : (store.privacyMode.contentLeavesDevice ? "network" : "lock.shield"))
                         .foregroundStyle(store.privacyMode.contentLeavesDevice ? .orange : .secondary)
                 }
 
@@ -73,7 +79,7 @@ struct SettingsView: View {
                 }
 
                 LabeledContent("Network use") {
-                    Text(store.privacyMode.networkUse)
+                    Text(store.offlineMode ? "Disabled after cached models" : store.privacyMode.networkUse)
                         .foregroundStyle(.secondary)
                 }
 
