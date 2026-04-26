@@ -63,7 +63,7 @@ distribution features that depend on those foundations.
   using the selected dictionary profile, with clear download, latency, and
   streaming-accuracy limits. Keep replacement rules as a fallback correction
   layer.
-- [ ] Add optional fuzzy dictionary matching with conservative thresholds,
+- [x] Add optional fuzzy dictionary matching with conservative thresholds,
   per-profile enablement, and visible review of proposed replacements before
   applying broad automatic corrections.
 

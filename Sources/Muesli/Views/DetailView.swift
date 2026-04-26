@@ -319,6 +319,8 @@ private struct TranscriptDetail: View {
 
                 RecordingActionBar(session: session, store: store)
 
+                FuzzyDictionaryReview(sessionID: session.id, store: store)
+
                 if session.status == .failed, let errorMessage = session.errorMessage {
                     Text(errorMessage)
                         .font(.callout)
@@ -338,6 +340,77 @@ private struct TranscriptDetail: View {
         .padding(.vertical, 28)
         .frame(maxWidth: 980, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+private struct FuzzyDictionaryReview: View {
+    let sessionID: TranscriptSession.ID
+    @ObservedObject var store: TranscriptionStore
+
+    private var suggestions: [FuzzyDictionarySuggestion] {
+        store.fuzzyDictionarySuggestions(for: sessionID)
+    }
+
+    var body: some View {
+        if !suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Dictionary Suggestions", systemImage: "text.magnifyingglass")
+                        .font(.headline)
+
+                    Spacer()
+
+                    Text("\(suggestions.count)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                ForEach(suggestions) { suggestion in
+                    HStack(spacing: 10) {
+                        Text(suggestion.original)
+                            .fontWeight(.semibold)
+                        Image(systemName: "arrow.right")
+                            .foregroundStyle(.secondary)
+                        Text(suggestion.replacement)
+                            .fontWeight(.semibold)
+
+                        if suggestion.occurrenceCount > 1 {
+                            Text("\(suggestion.occurrenceCount)x")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+
+                        Spacer()
+
+                        Text("\(Int((suggestion.similarity * 100).rounded()))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+
+                        Button("Apply", systemImage: "checkmark") {
+                            store.applyFuzzyDictionarySuggestion(suggestion)
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Dismiss", systemImage: "xmark") {
+                            store.dismissFuzzyDictionarySuggestion(suggestion)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .help("Dismiss suggestion")
+                    }
+                    .font(.callout)
+                }
+            }
+            .padding(14)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(.quaternary, lineWidth: 1)
+            }
+        }
     }
 }
 

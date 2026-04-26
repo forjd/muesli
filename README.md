@@ -36,6 +36,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
   edit suggestions.
 - Profile-specific custom dictionaries for general, work, code, medical, legal,
   or project-specific vocabulary.
+- Optional fuzzy dictionary suggestions per profile, with transcript-level review
+  before any near-match replacements are applied.
 - One-shot global dictation using `Command-Shift-D`.
 - Configurable dictation behavior for toggle, push-to-talk, and hybrid workflows.
 - Menu bar controls for dictation, recording, model selection, and settings.
@@ -175,6 +177,11 @@ Custom dictionary terms are organized into selectable profiles. Muesli includes
 General, Work, Code, Medical, and Legal profiles, and you can add project-specific
 profiles in Settings. Only the selected profile is applied as a correction layer
 after transcription.
+
+Each profile can also enable fuzzy dictionary suggestions. Fuzzy matching uses
+conservative near-match checks for longer single-word terms, then shows proposed
+transcript replacements for review. Suggestions are not applied automatically;
+approve or dismiss them from the transcript detail view.
 
 Settings also includes optional final-pass vocabulary boosting for the selected
 dictionary profile. When enabled, Muesli asks FluidAudio to run its CTC rescoring

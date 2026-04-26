@@ -270,6 +270,18 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
+                Toggle(
+                    "Suggest fuzzy matches for this profile",
+                    isOn: Binding(
+                        get: { store.selectedCustomDictionaryProfile?.fuzzyMatchingEnabled ?? false },
+                        set: { store.setSelectedCustomDictionaryProfileFuzzyMatchingEnabled($0) }
+                    )
+                )
+
+                Text("Shows conservative near-match suggestions after transcription. Muesli does not apply them until you review and approve each change.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
                 HStack {
                     TextField("New profile", text: $dictionaryProfileName)
                     Button("Add Profile", systemImage: "person.crop.circle.badge.plus") {

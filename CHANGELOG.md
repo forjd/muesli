@@ -36,6 +36,8 @@
 - Added optional FluidAudio CTC vocabulary boosting for final-pass transcription
   using the selected dictionary profile, with offline-safe fallback to regular
   transcription and deterministic cleanup.
+- Added optional fuzzy dictionary suggestions per profile, with transcript-level
+  review before applying near-match replacements.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 

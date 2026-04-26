@@ -108,6 +108,7 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(finalPassVocabularyBoostingEnabled, forKey: PreferenceKey.finalPassVocabularyBoostingEnabled)
         }
     }
+    @Published var fuzzyDictionarySuggestions: [FuzzyDictionarySuggestion] = []
     @Published var lastManualReplacementSuggestion: ReplacementRule?
     @Published var retentionPolicy = RetentionPolicy() {
         didSet {
@@ -450,6 +451,7 @@ final class TranscriptionStore: ObservableObject {
                 encryptAudioFileIfNeeded(at: index)
             }
             deleteChunkFiles(for: sessions[index])
+            updateFuzzyDictionarySuggestions(for: sessions[index])
             statusMessage = "Skipped final pass for long recording; using live transcript."
             isBusy = false
             scheduleSave()
@@ -487,9 +489,13 @@ final class TranscriptionStore: ObservableObject {
                     encryptAudioFileIfNeeded(at: updatedIndex)
                 }
                 deleteChunkFiles(for: sessions[updatedIndex])
+                updateFuzzyDictionarySuggestions(for: sessions[updatedIndex])
             }
             if statusMessage.hasPrefix("Transcription complete, but audio encryption failed") == false {
-                if let vocabularyBoosting = result.vocabularyBoosting,
+                let fuzzySuggestionCount = fuzzyDictionarySuggestions(for: sessionID).count
+                if fuzzySuggestionCount > 0 {
+                    statusMessage = "Review \(fuzzySuggestionCount) fuzzy dictionary suggestion\(fuzzySuggestionCount == 1 ? "" : "s")."
+                } else if let vocabularyBoosting = result.vocabularyBoosting,
                    vocabularyBoosting.status != .skipped || !vocabularyBoosting.detectedTerms.isEmpty {
                     statusMessage = vocabularyBoosting.message
                 } else {
@@ -1061,6 +1067,7 @@ final class TranscriptionStore: ObservableObject {
         if !previous.isEmpty, !trimmed.isEmpty, previous != trimmed {
             lastManualReplacementSuggestion = ReplacementRule(find: previous, replace: trimmed, isEnabled: false)
         }
+        updateFuzzyDictionarySuggestions(for: sessions[index])
         statusMessage = "Transcript updated."
         scheduleSave()
     }
@@ -1084,6 +1091,7 @@ final class TranscriptionStore: ObservableObject {
         guard let profileIndex = selectedCustomDictionaryProfileIndex else { return }
         guard customDictionaryProfiles[profileIndex].terms.contains(where: { $0.value.caseInsensitiveCompare(value) == .orderedSame }) == false else { return }
         customDictionaryProfiles[profileIndex].terms.append(CustomDictionaryTerm(value: value))
+        refreshSelectedSessionFuzzyDictionarySuggestions()
         statusMessage = "Dictionary term added."
     }
 
@@ -1092,6 +1100,7 @@ final class TranscriptionStore: ObservableObject {
         for offset in offsets.sorted(by: >) {
             customDictionaryProfiles[profileIndex].terms.remove(at: offset)
         }
+        refreshSelectedSessionFuzzyDictionarySuggestions()
     }
 
     func addCustomDictionaryProfile(name: String) {
@@ -1113,6 +1122,14 @@ final class TranscriptionStore: ObservableObject {
            let firstProfileID = customDictionaryProfiles.first?.id {
             selectedCustomDictionaryProfileID = firstProfileID
         }
+        refreshSelectedSessionFuzzyDictionarySuggestions()
+    }
+
+    func setSelectedCustomDictionaryProfileFuzzyMatchingEnabled(_ isEnabled: Bool) {
+        guard let profileIndex = selectedCustomDictionaryProfileIndex else { return }
+        customDictionaryProfiles[profileIndex].fuzzyMatchingEnabled = isEnabled
+        refreshSelectedSessionFuzzyDictionarySuggestions()
+        statusMessage = isEnabled ? "Fuzzy dictionary review enabled for this profile." : "Fuzzy dictionary review disabled for this profile."
     }
 
     func promoteLastManualEditReplacement() {
@@ -1126,6 +1143,61 @@ final class TranscriptionStore: ObservableObject {
     private func applyReplacementRules(to text: String) -> String {
         let replaced = ReplacementRuleEngine(rules: replacementRules).apply(to: text)
         return CustomDictionaryEngine(terms: selectedCustomDictionaryTerms).apply(to: replaced)
+    }
+
+    func fuzzyDictionarySuggestions(for sessionID: TranscriptSession.ID) -> [FuzzyDictionarySuggestion] {
+        fuzzyDictionarySuggestions.filter { $0.sessionID == sessionID }
+    }
+
+    func applyFuzzyDictionarySuggestion(_ suggestion: FuzzyDictionarySuggestion) {
+        guard let index = sessions.firstIndex(where: { $0.id == suggestion.sessionID }) else { return }
+
+        let engine = CustomDictionaryEngine(terms: selectedCustomDictionaryTerms)
+        let updated = engine.apply(suggestion, to: sessions[index].displayTranscript)
+        guard updated != sessions[index].displayTranscript else {
+            dismissFuzzyDictionarySuggestion(suggestion)
+            return
+        }
+
+        if !sessions[index].finalTranscript.isEmpty {
+            sessions[index].finalTranscript = updated
+        } else if !sessions[index].liveTranscript.isEmpty {
+            sessions[index].liveTranscript = updated
+        }
+        sessions[index].transcript = updated
+        fuzzyDictionarySuggestions.removeAll { $0.id == suggestion.id }
+        updateFuzzyDictionarySuggestions(for: sessions[index])
+        statusMessage = "Applied fuzzy dictionary suggestion."
+        scheduleSave()
+    }
+
+    func dismissFuzzyDictionarySuggestion(_ suggestion: FuzzyDictionarySuggestion) {
+        fuzzyDictionarySuggestions.removeAll { $0.id == suggestion.id }
+        statusMessage = "Dismissed fuzzy dictionary suggestion."
+    }
+
+    private func refreshSelectedSessionFuzzyDictionarySuggestions() {
+        guard let session = selectedSession else { return }
+        updateFuzzyDictionarySuggestions(for: session)
+    }
+
+    private func updateFuzzyDictionarySuggestions(for session: TranscriptSession) {
+        fuzzyDictionarySuggestions.removeAll { $0.sessionID == session.id }
+        guard let profile = selectedCustomDictionaryProfile, profile.fuzzyMatchingEnabled else { return }
+
+        let candidates = CustomDictionaryEngine(terms: profile.terms).fuzzySuggestions(in: session.displayTranscript)
+        fuzzyDictionarySuggestions.append(
+            contentsOf: candidates.map {
+                FuzzyDictionarySuggestion(
+                    sessionID: session.id,
+                    profileID: profile.id,
+                    original: $0.original,
+                    replacement: $0.replacement,
+                    occurrenceCount: $0.occurrenceCount,
+                    similarity: $0.similarity
+                )
+            }
+        )
     }
 
     private func finalPassVocabularyBoostingRequest() -> VocabularyBoostingRequest? {
@@ -1180,6 +1252,7 @@ final class TranscriptionStore: ObservableObject {
         deleteFiles(for: session)
         liveChunkStats[sessionID] = nil
         failedLiveChunks[sessionID] = nil
+        fuzzyDictionarySuggestions.removeAll { $0.sessionID == sessionID }
 
         if selectedSessionID == sessionID {
             selectedSessionID = sessions.first?.id
