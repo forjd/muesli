@@ -38,6 +38,15 @@ struct ContentView: View {
                 .keyboardShortcut("r", modifiers: [.command])
 
                 Button {
+                    Task { await store.startMeetingRecording() }
+                } label: {
+                    Label("Meeting", systemImage: "person.2.wave.2")
+                }
+                .labelStyle(.iconOnly)
+                .help("Start meeting recording")
+                .disabled(store.isBusy || store.isRecording)
+
+                Button {
                     Task { await store.transcribeLatestRecording() }
                 } label: {
                     Label("Transcribe", systemImage: "text.bubble.fill")
@@ -50,6 +59,10 @@ struct ContentView: View {
                 Menu {
                     Button("Import Audio File", systemImage: "square.and.arrow.down") {
                         store.importAudioFile()
+                    }
+
+                    Button("Import Meeting Audio", systemImage: "person.2.wave.2") {
+                        store.importMeetingAudioFile()
                     }
 
                     Button("Batch Import Audio", systemImage: "tray.and.arrow.down") {

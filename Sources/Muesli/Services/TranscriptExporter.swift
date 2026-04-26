@@ -17,6 +17,7 @@ struct TranscriptExporter {
                 model: session.model.rawValue,
                 transcript: session.displayTranscript,
                 speakerTranscript: speakerTranscript(for: session),
+                systemAudioTranscript: session.systemAudioTranscript,
                 liveTranscript: session.liveTranscript,
                 finalTranscript: session.finalTranscript,
                 segments: session.segments,
@@ -59,6 +60,7 @@ struct TranscriptExporter {
             "- Model: \(session.model.label)",
             "- Workflow: \(session.workflow.label)",
             speakerCountMetadata(for: session),
+            systemAudioMetadata(for: session),
             session.duration.map { "- Duration: \(formatDuration($0))" },
             session.fileSize.map { "- Audio size: \(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file))" },
             "",
@@ -90,7 +92,17 @@ struct TranscriptExporter {
     }
 
     static func exportTranscriptText(for session: TranscriptSession) -> String {
-        speakerTranscript(for: session) ?? session.displayTranscript
+        let primary = speakerTranscript(for: session) ?? session.displayTranscript
+        guard session.workflow == .meeting,
+              !session.systemAudioTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return primary
+        }
+        return [
+            primary,
+            "",
+            "System audio transcript:",
+            session.systemAudioTranscript
+        ].joined(separator: "\n")
     }
 
     static func formatSRTTime(_ time: TimeInterval) -> String {
@@ -125,6 +137,14 @@ struct TranscriptExporter {
         return "- Speakers: \(count)"
     }
 
+    private static func systemAudioMetadata(for session: TranscriptSession) -> String? {
+        guard session.workflow == .meeting,
+              !session.systemAudioTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return "- System audio transcript: Included"
+    }
+
     private static func formatDuration(_ duration: TimeInterval) -> String {
         let seconds = max(0, Int(duration.rounded()))
         let hours = seconds / 3600
@@ -156,6 +176,7 @@ private struct TranscriptExportPayload: Encodable {
     let model: String
     let transcript: String
     let speakerTranscript: String?
+    let systemAudioTranscript: String
     let liveTranscript: String
     let finalTranscript: String
     let segments: [TranscriptSegment]

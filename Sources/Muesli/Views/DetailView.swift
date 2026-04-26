@@ -472,6 +472,12 @@ private struct RecordingSummary: View {
                         .frame(height: 14)
                     LiveChunkStatsView(stats: stats)
                 }
+
+                if session.workflow == .meeting, let source = session.meetingMetadata?.source {
+                    Divider()
+                        .frame(height: 14)
+                    Label(source.label, systemImage: source.systemImage)
+                }
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -573,6 +579,22 @@ private struct RecordingActionBar: View {
                 Button("SRT") {
                     store.exportTranscript(sessionID: session.id, format: .srt)
                 }
+
+                if session.workflow == .meeting {
+                    Divider()
+
+                    Menu("Meeting Notes") {
+                        ForEach(MeetingNotesTemplate.allCases) { template in
+                            Button(template.label) {
+                                store.exportMeetingNotes(sessionID: session.id, template: template)
+                            }
+
+                            Button("\(template.label) PDF") {
+                                store.exportMeetingNotesPDF(sessionID: session.id, template: template)
+                            }
+                        }
+                    }
+                }
             } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
@@ -643,6 +665,21 @@ private struct RecordingActionBar: View {
                     store.exportTranscript(sessionID: session.id, format: .srt)
                 }
                 .disabled(session.displayTranscript.isEmpty)
+
+                if session.workflow == .meeting {
+                    Menu("Meeting Notes", systemImage: "doc.text") {
+                        ForEach(MeetingNotesTemplate.allCases) { template in
+                            Button(template.label) {
+                                store.exportMeetingNotes(sessionID: session.id, template: template)
+                            }
+
+                            Button("\(template.label) PDF") {
+                                store.exportMeetingNotesPDF(sessionID: session.id, template: template)
+                            }
+                        }
+                    }
+                    .disabled(session.displayTranscript.isEmpty)
+                }
 
                 Divider()
 

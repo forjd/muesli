@@ -83,6 +83,52 @@ struct SettingsView: View {
             Text(store.selectedModel.detail)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+
+            Divider()
+
+            LabeledContent("Speaker diarization") {
+                HStack(spacing: 8) {
+                    Text(store.diarizationModelLoadState.label)
+                        .foregroundStyle(.secondary)
+
+                    Button(diarizationButtonTitle, systemImage: diarizationButtonIcon) {
+                        Task { await store.prepareDiarizer() }
+                    }
+                    .disabled(store.diarizationModelLoadState.isLoading)
+                }
+            }
+
+            Text("Meeting speaker labels use FluidAudio's offline diarization models. Offline mode requires these models to be cached first.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var diarizationButtonTitle: String {
+        switch store.diarizationModelLoadState {
+        case .ready:
+            "Reload"
+        case .loadingCached, .downloading:
+            "Loading"
+        case .downloadRequired:
+            "Download"
+        case .failed:
+            "Retry"
+        case .idle:
+            "Load"
+        }
+    }
+
+    private var diarizationButtonIcon: String {
+        switch store.diarizationModelLoadState {
+        case .ready:
+            "arrow.clockwise"
+        case .loadingCached, .downloading:
+            "hourglass"
+        case .downloadRequired, .idle:
+            "arrow.down.circle"
+        case .failed:
+            "arrow.clockwise"
         }
     }
 

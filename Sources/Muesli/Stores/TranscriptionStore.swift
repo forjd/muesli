@@ -49,6 +49,7 @@ final class TranscriptionStore: ObservableObject {
     @Published var latestFeedbackEvent: DictationFeedbackEvent?
     @Published var isWarmingModel = false
     @Published var modelLoadState: ModelLoadState = .idle
+    @Published var diarizationModelLoadState: ModelLoadState = .idle
     @Published var recordingElapsed: TimeInterval = 0
     @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
     @Published var transcriberHealth: TranscriberHealth?
@@ -141,16 +142,19 @@ final class TranscriptionStore: ObservableObject {
     @Published private(set) var privacyMode: PrivacyMode = .localOnlyDictation
 
     private let recorder = AudioRecorder()
+    private let systemAudioRecorder = SystemAudioRecorder()
     private let transcriber = ParakeetTranscriber()
     private let diarizer = FluidAudioDiarizer()
     private let persistence = SessionPersistence()
     private let secureStorage = SecureStorage()
     private var activeRecordingURL: URL?
+    private var activeSystemAudioURL: URL?
     private var activeSessionID: TranscriptSession.ID?
     private var meterTask: Task<Void, Never>?
     private var elapsedTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var failedLiveChunks: [TranscriptSession.ID: [RecordingChunk]] = [:]
+    private var liveSpeakerTurns: [TranscriptSession.ID: [SpeakerTurn]] = [:]
     private var liveChunkQueue: Task<Void, Never>?
     private var dictationTargetApp: NSRunningApplication?
     private var dictationTargetElement: AXUIElement?
@@ -268,6 +272,20 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func importMeetingAudioFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = AudioImportFormat.contentTypes
+        panel.message = "Choose a meeting audio file to copy into Muesli and transcribe."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        Task {
+            await importAudioFile(at: url, transcribeAfterImport: true, workflow: .meeting)
+        }
+    }
+
     func batchImportAudioFiles() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
@@ -325,7 +343,11 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
-    func importAudioFile(at sourceURL: URL, transcribeAfterImport: Bool = false) async {
+    func importAudioFile(
+        at sourceURL: URL,
+        transcribeAfterImport: Bool = false,
+        workflow: TranscriptWorkflow = .dictation
+    ) async {
         guard !isBusy, !isRecording else { return }
         guard AudioImportFormat.isSupported(sourceURL) else {
             statusMessage = "Unsupported audio format. Import WAV, M4A, MP3, AIFF, or CAF."
@@ -337,7 +359,13 @@ final class TranscriptionStore: ObservableObject {
 
         do {
             let importedURL = try copyImportedAudio(from: sourceURL)
-            var session = TranscriptSession(audioURL: importedURL, model: selectedModel, status: .recorded)
+            var session = TranscriptSession(
+                audioURL: importedURL,
+                model: selectedModel,
+                status: .recorded,
+                workflow: workflow,
+                meetingMetadata: workflow == .meeting ? MeetingMetadata(source: .importedAudio) : nil
+            )
             sessions.insert(session, at: 0)
             selectedSessionID = session.id
             updateRecordingMetadata(at: 0)
@@ -371,7 +399,7 @@ final class TranscriptionStore: ObservableObject {
     func startMeetingRecording() async {
         await startRecording(workflow: .meeting)
         if isRecording {
-            statusMessage = "Meeting recording; stop to transcribe and diarize."
+            statusMessage = "Meeting recording; starting system audio capture."
         }
     }
 
@@ -411,9 +439,20 @@ final class TranscriptionStore: ObservableObject {
             activeSessionID = session.id
             liveChunkStats[session.id] = LiveChunkStats()
             activeRecordingURL = url
+            if workflow == .meeting {
+                startSystemAudioCapture(for: session.id)
+            }
             isRecording = true
             publishFeedback(title: "Recording Started", detail: workflow == .meeting ? "Listening for meeting audio." : "Listening for dictation.", kind: .recordingStarted)
             try await transcriber.startStreaming(sessionID: session.id, model: selectedModel)
+            if workflow == .meeting {
+                do {
+                    try await diarizer.startLive(allowsModelDownload: !offlineMode)
+                    statusMessage = "Meeting recording with live speaker labels."
+                } catch {
+                    statusMessage = "Meeting recording; live speaker labels unavailable."
+                }
+            }
             scheduleSave()
             startMetering()
             startElapsedTimer()
@@ -424,6 +463,46 @@ final class TranscriptionStore: ObservableObject {
                 kind: .microphonePermission,
                 detail: "Muesli could not start the microphone input: \(error.localizedDescription)"
             )
+        }
+    }
+
+    private func startSystemAudioCapture(for sessionID: TranscriptSession.ID) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await self.systemAudioRecorder.start(recordingsDirectory: self.recordingsDirectoryURL)
+                await MainActor.run {
+                    self.activeSystemAudioURL = url
+                    if let index = self.sessions.firstIndex(where: { $0.id == sessionID }) {
+                        self.sessions[index].systemAudioURL = url
+                        self.sessions[index].meetingMetadata = MeetingMetadata(
+                            diarizationStatus: self.sessions[index].meetingMetadata?.diarizationStatus ?? .notStarted,
+                            speakerCount: self.sessions[index].meetingMetadata?.speakerCount ?? 0,
+                            source: .microphoneAndSystemAudio
+                        )
+                        if self.isRecording, self.activeSessionID == sessionID {
+                            self.statusMessage = "Meeting recording microphone and system audio."
+                        }
+                        self.scheduleSave()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.activeSystemAudioURL = nil
+                    if let index = self.sessions.firstIndex(where: { $0.id == sessionID }) {
+                        self.sessions[index].meetingMetadata = MeetingMetadata(
+                            diarizationStatus: self.sessions[index].meetingMetadata?.diarizationStatus ?? .notStarted,
+                            speakerCount: self.sessions[index].meetingMetadata?.speakerCount ?? 0,
+                            source: .microphone
+                        )
+                        self.sessions[index].errorMessage = "System audio unavailable: \(error.localizedDescription)"
+                        if self.isRecording, self.activeSessionID == sessionID {
+                            self.statusMessage = "Meeting recording microphone audio; system audio unavailable."
+                        }
+                        self.scheduleSave()
+                    }
+                }
+            }
         }
     }
 
@@ -518,6 +597,7 @@ final class TranscriptionStore: ObservableObject {
     func stopRecording() -> TranscriptSession.ID? {
         guard isRecording else { return nil }
         recorder.stop()
+        systemAudioRecorder.stop()
         liveChunkQueue?.cancel()
         liveChunkQueue = nil
         meterTask?.cancel()
@@ -529,20 +609,43 @@ final class TranscriptionStore: ObservableObject {
             statusMessage = "Finalizing recording..."
             publishFeedback(title: "Recording Stopped", detail: "Finalizing audio before transcription.", kind: .recordingStopped)
             self.activeRecordingURL = nil
+            self.activeSystemAudioURL = nil
             self.activeSessionID = nil
             if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
                sessions[index].status == .recording {
                 sessions[index].status = .finalizing
                 updateRecordingMetadata(at: index)
             }
-            Task {
-                await transcriber.finishStreaming(sessionID: activeSessionID)
+            Task { [weak self, activeSessionID] in
+                guard let self else { return }
+                await self.transcriber.finishStreaming(sessionID: activeSessionID)
+                let finalSpeakerTurns = await self.diarizer.finishLive()
+                guard !finalSpeakerTurns.isEmpty else { return }
+                await MainActor.run {
+                    self.liveSpeakerTurns[activeSessionID] = finalSpeakerTurns
+                    guard
+                        let index = self.sessions.firstIndex(where: { $0.id == activeSessionID }),
+                        self.sessions[index].workflow == .meeting,
+                        !self.sessions[index].segments.isEmpty
+                    else { return }
+                    let segments = MeetingDiarizationEngine()
+                        .assignSpeakerTurns(finalSpeakerTurns, to: self.sessions[index].segments)
+                    let speakerCount = MeetingDiarizationEngine.speakerCount(in: segments)
+                    self.sessions[index].segments = segments
+                    self.sessions[index].meetingMetadata = MeetingMetadata(
+                        diarizationStatus: speakerCount > 0 ? .complete : .unavailable,
+                        speakerCount: speakerCount,
+                        source: self.sessions[index].meetingMetadata?.source ?? .microphone
+                    )
+                    self.scheduleSave()
+                }
             }
             scheduleSave()
             return activeSessionID
         }
 
         activeRecordingURL = nil
+        activeSystemAudioURL = nil
         activeSessionID = nil
         return nil
     }
@@ -603,6 +706,7 @@ final class TranscriptionStore: ObservableObject {
     func cancelDictation() {
         guard isRecording, let activeSessionID else { return }
         recorder.stop()
+        systemAudioRecorder.stop()
         liveChunkQueue?.cancel()
         liveChunkQueue = nil
         meterTask?.cancel()
@@ -611,6 +715,7 @@ final class TranscriptionStore: ObservableObject {
         recordingElapsed = 0
         isRecording = false
         activeRecordingURL = nil
+        activeSystemAudioURL = nil
         self.activeSessionID = nil
 
         if dictationSessionID == activeSessionID {
@@ -673,9 +778,13 @@ final class TranscriptionStore: ObservableObject {
             }
             if deleteAudioAfterTranscription {
                 deleteAudioFile(for: sessions[index])
+                deleteSystemAudioFile(for: sessions[index])
+                sessions[index].systemAudioURL = nil
+                sessions[index].isSystemAudioEncrypted = false
                 updateRecordingMetadata(at: index)
             } else {
                 encryptAudioFileIfNeeded(at: index)
+                encryptSystemAudioFileIfNeeded(at: index)
             }
             deleteChunkFiles(for: sessions[index])
             updateFuzzyDictionarySuggestions(for: sessions[index])
@@ -709,17 +818,29 @@ final class TranscriptionStore: ObservableObject {
                 } else if !sessions[updatedIndex].liveTranscript.isEmpty {
                     sessions[updatedIndex].transcript = sessions[updatedIndex].liveTranscript
                 }
-                if deleteAudioAfterTranscription {
-                    deleteAudioFile(for: sessions[updatedIndex])
-                    updateRecordingMetadata(at: updatedIndex)
-                } else {
-                    encryptAudioFileIfNeeded(at: updatedIndex)
+                if sessions[updatedIndex].workflow == .meeting,
+                   let systemAudioURL = sessions[updatedIndex].systemAudioURL,
+                   !sessions[updatedIndex].isSystemAudioEncrypted {
+                    statusMessage = "Transcribing system audio..."
+                    if let systemAudioTranscript = try? await transcriber.transcribe(audioURL: systemAudioURL, model: model).text.trimmingCharacters(in: .whitespacesAndNewlines) {
+                        sessions[updatedIndex].systemAudioTranscript = applyReplacementRules(to: systemAudioTranscript)
+                    }
                 }
-                deleteChunkFiles(for: sessions[updatedIndex])
-                updateFuzzyDictionarySuggestions(for: sessions[updatedIndex])
                 if sessions[updatedIndex].workflow == .meeting {
                     await applyMeetingDiarization(at: updatedIndex, audioURL: transcriptionAudioURL)
                 }
+                if deleteAudioAfterTranscription {
+                    deleteAudioFile(for: sessions[updatedIndex])
+                    deleteSystemAudioFile(for: sessions[updatedIndex])
+                    sessions[updatedIndex].systemAudioURL = nil
+                    sessions[updatedIndex].isSystemAudioEncrypted = false
+                    updateRecordingMetadata(at: updatedIndex)
+                } else {
+                    encryptAudioFileIfNeeded(at: updatedIndex)
+                    encryptSystemAudioFileIfNeeded(at: updatedIndex)
+                }
+                deleteChunkFiles(for: sessions[updatedIndex])
+                updateFuzzyDictionarySuggestions(for: sessions[updatedIndex])
             }
             if statusMessage.hasPrefix("Transcription complete, but audio encryption failed") == false {
                 let fuzzySuggestionCount = fuzzyDictionarySuggestions(for: sessionID).count
@@ -798,8 +919,12 @@ final class TranscriptionStore: ObservableObject {
             guard let self else { return }
 
             do {
+                let speakerTurns = (try? await self.diarizer.diarizeLiveChunk(chunkURL: chunk.url)) ?? []
                 if let result = try await self.transcriber.streamChunk(sessionID: sessionID, chunkURL: chunk.url, model: model) {
                     await MainActor.run {
+                        if !speakerTurns.isEmpty {
+                            self.liveSpeakerTurns[sessionID] = speakerTurns
+                        }
                         self.replaceLiveTranscript(
                             result,
                             sessionID: sessionID,
@@ -837,7 +962,17 @@ final class TranscriptionStore: ObservableObject {
 
         sessions[index].liveTranscript = trimmed
         sessions[index].segments.removeAll { $0.source == .live }
-        sessions[index].segments.append(contentsOf: liveSegments(from: result.words, fallbackChunkIndex: chunkIndex))
+        var segments = liveSegments(from: result.words, fallbackChunkIndex: chunkIndex)
+        if let speakerTurns = liveSpeakerTurns[sessionID], !speakerTurns.isEmpty {
+            segments = MeetingDiarizationEngine().assignSpeakerTurns(speakerTurns, to: segments)
+            sessions[index].workflow = .meeting
+            sessions[index].meetingMetadata = MeetingMetadata(
+                diarizationStatus: .complete,
+                speakerCount: MeetingDiarizationEngine.speakerCount(in: segments),
+                source: sessions[index].meetingMetadata?.source ?? .microphone
+            )
+        }
+        sessions[index].segments.append(contentsOf: segments)
 
         if sessions[index].finalTranscript.isEmpty {
             sessions[index].transcript = trimmed
@@ -952,6 +1087,36 @@ final class TranscriptionStore: ObservableObject {
 
         isWarmingModel = false
         refreshTranscriberHealth()
+    }
+
+    func prepareDiarizer() async {
+        guard !diarizationModelLoadState.isLoading else { return }
+
+        let cached = FluidAudioDiarizer.offlineModelsAreCached()
+        if offlineMode && !cached {
+            diarizationModelLoadState = .downloadRequired("Speaker diarization")
+            statusMessage = "Offline mode is on. Turn it off once to download FluidAudio speaker diarization models."
+            return
+        }
+
+        diarizationModelLoadState = cached ? .loadingCached("Speaker diarization") : .downloading("Speaker diarization")
+        statusMessage = cached ? "Loading cached speaker diarization models..." : "Downloading speaker diarization models..."
+
+        do {
+            try await diarizer.prepare(allowsModelDownload: !offlineMode)
+            diarizationModelLoadState = .ready("Speaker diarization")
+            statusMessage = "Speaker diarization is ready."
+        } catch DiarizationError.diarizationModelDownloadRequired {
+            diarizationModelLoadState = .downloadRequired("Speaker diarization")
+            statusMessage = "Speaker diarization models must be downloaded before offline use."
+        } catch {
+            diarizationModelLoadState = .failed(error.localizedDescription)
+            statusMessage = error.localizedDescription
+            activeIssue = AppIssue(
+                kind: .modelLoad,
+                detail: "Speaker diarization models could not be prepared: \(error.localizedDescription)"
+            )
+        }
     }
 
     func resetTranscriber() async {
@@ -1476,6 +1641,59 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func exportMeetingNotes(sessionID: TranscriptSession.ID, template: MeetingNotesTemplate) {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        guard session.workflow == .meeting else {
+            statusMessage = "Meeting notes are available for meeting sessions."
+            return
+        }
+        guard !session.displayTranscript.isEmpty else {
+            statusMessage = "No meeting transcript to export."
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "\(BatchExportPlanner.exportBaseName(for: session))-notes.md"
+        panel.allowedContentTypes = [TranscriptExportFormat.markdown.contentType]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try Data(template.markdown(for: session).utf8).write(to: url, options: [.atomic])
+            statusMessage = "Exported \(template.label)."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func exportMeetingNotesPDF(sessionID: TranscriptSession.ID, template: MeetingNotesTemplate) {
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return }
+        guard session.workflow == .meeting else {
+            statusMessage = "Meeting notes are available for meeting sessions."
+            return
+        }
+        guard !session.displayTranscript.isEmpty else {
+            statusMessage = "No meeting transcript to export."
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = "\(BatchExportPlanner.exportBaseName(for: session))-notes.pdf"
+        panel.allowedContentTypes = [.pdf]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            let data = MeetingNotesPDFWriter.data(title: template.label, markdown: template.markdown(for: session))
+            try data.write(to: url, options: [.atomic])
+            statusMessage = "Exported \(template.label) PDF."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
     func batchExportVisibleTranscripts(format: TranscriptExportFormat) {
         let exportableSessions = filteredSessions.filter { !$0.displayTranscript.isEmpty }
         guard !exportableSessions.isEmpty else {
@@ -1521,6 +1739,7 @@ final class TranscriptionStore: ObservableObject {
         deleteFiles(for: session)
         liveChunkStats[sessionID] = nil
         failedLiveChunks[sessionID] = nil
+        liveSpeakerTurns[sessionID] = nil
         fuzzyDictionarySuggestions.removeAll { $0.sessionID == sessionID }
 
         if selectedSessionID == sessionID {
@@ -1534,6 +1753,7 @@ final class TranscriptionStore: ObservableObject {
     func deleteAllSessions() {
         if isRecording {
             recorder.stop()
+            systemAudioRecorder.stop()
             liveChunkQueue?.cancel()
             liveChunkQueue = nil
             meterTask?.cancel()
@@ -1542,6 +1762,7 @@ final class TranscriptionStore: ObservableObject {
             recordingElapsed = 0
             isRecording = false
             activeRecordingURL = nil
+            activeSystemAudioURL = nil
             activeSessionID = nil
         }
 
@@ -1550,6 +1771,7 @@ final class TranscriptionStore: ObservableObject {
         selectedSessionID = nil
         liveChunkStats.removeAll()
         failedLiveChunks.removeAll()
+        liveSpeakerTurns.removeAll()
         dictationTargetApp = nil
         dictationTargetElement = nil
         dictationTargetBundleIdentifier = nil
@@ -1574,19 +1796,23 @@ final class TranscriptionStore: ObservableObject {
                 retainedSessions.append(session)
             case .recordings:
                 deleteAudioFile(for: session)
+                deleteSystemAudioFile(for: session)
                 deleteChunkFiles(for: session)
-                if session.fileSize != nil || session.duration != nil || session.isAudioEncrypted {
+                if session.fileSize != nil || session.duration != nil || session.isAudioEncrypted || session.systemAudioURL != nil || session.isSystemAudioEncrypted {
                     session.fileSize = nil
                     session.duration = nil
                     session.isAudioEncrypted = false
+                    session.systemAudioURL = nil
+                    session.isSystemAudioEncrypted = false
                 }
                 retainedSessions.append(session)
                 changed = true
             case .transcripts:
-                if !session.transcript.isEmpty || !session.liveTranscript.isEmpty || !session.finalTranscript.isEmpty || !session.segments.isEmpty {
+                if !session.transcript.isEmpty || !session.liveTranscript.isEmpty || !session.finalTranscript.isEmpty || !session.systemAudioTranscript.isEmpty || !session.segments.isEmpty {
                     session.transcript = ""
                     session.liveTranscript = ""
                     session.finalTranscript = ""
+                    session.systemAudioTranscript = ""
                     session.segments = []
                     changed = true
                 }
@@ -1595,6 +1821,7 @@ final class TranscriptionStore: ObservableObject {
                 deleteFiles(for: session)
                 liveChunkStats[session.id] = nil
                 failedLiveChunks[session.id] = nil
+                liveSpeakerTurns[session.id] = nil
                 changed = true
             }
         }
@@ -1618,10 +1845,13 @@ final class TranscriptionStore: ObservableObject {
 
         if mode.deletesAudio {
             deleteAudioFile(for: sessions[index])
+            deleteSystemAudioFile(for: sessions[index])
             deleteChunkFiles(for: sessions[index])
             sessions[index].duration = nil
             sessions[index].fileSize = nil
             sessions[index].isAudioEncrypted = false
+            sessions[index].systemAudioURL = nil
+            sessions[index].isSystemAudioEncrypted = false
         }
 
         if mode.keepsTranscript {
@@ -1631,6 +1861,7 @@ final class TranscriptionStore: ObservableObject {
             let deletedSession = sessions.remove(at: index)
             liveChunkStats[deletedSession.id] = nil
             failedLiveChunks[deletedSession.id] = nil
+            liveSpeakerTurns[deletedSession.id] = nil
             if selectedSessionID == deletedSession.id {
                 selectedSessionID = sessions.first?.id
             }
@@ -1675,6 +1906,7 @@ final class TranscriptionStore: ObservableObject {
 
     private func deleteFiles(for session: TranscriptSession) {
         deleteAudioFile(for: session)
+        deleteSystemAudioFile(for: session)
         deleteChunkFiles(for: session)
     }
 
@@ -1689,6 +1921,11 @@ final class TranscriptionStore: ObservableObject {
 
     private func deleteAudioFile(for session: TranscriptSession) {
         try? FileManager.default.removeItem(at: session.audioURL)
+    }
+
+    private func deleteSystemAudioFile(for session: TranscriptSession) {
+        guard let systemAudioURL = session.systemAudioURL else { return }
+        try? FileManager.default.removeItem(at: systemAudioURL)
     }
 
     private func copyImportedAudio(from sourceURL: URL) throws -> URL {
@@ -1717,6 +1954,22 @@ final class TranscriptionStore: ObservableObject {
         } catch {
             sessions[index].errorMessage = error.localizedDescription
             statusMessage = "Transcription complete, but audio encryption failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func encryptSystemAudioFileIfNeeded(at index: Int) {
+        guard sessions.indices.contains(index),
+              let systemAudioURL = sessions[index].systemAudioURL,
+              !sessions[index].isSystemAudioEncrypted else {
+            return
+        }
+
+        do {
+            try secureStorage.encryptFile(at: systemAudioURL)
+            sessions[index].isSystemAudioEncrypted = true
+        } catch {
+            sessions[index].errorMessage = error.localizedDescription
+            statusMessage = "Transcription complete, but system audio encryption failed: \(error.localizedDescription)"
         }
     }
 

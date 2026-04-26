@@ -16,6 +16,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
     var isAudioEncrypted: Bool
     var workflow: TranscriptWorkflow
     var meetingMetadata: MeetingMetadata?
+    var systemAudioURL: URL?
+    var isSystemAudioEncrypted: Bool
+    var systemAudioTranscript: String
 
     init(
         id: UUID = UUID(),
@@ -32,7 +35,10 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         errorMessage: String? = nil,
         isAudioEncrypted: Bool = false,
         workflow: TranscriptWorkflow = .dictation,
-        meetingMetadata: MeetingMetadata? = nil
+        meetingMetadata: MeetingMetadata? = nil,
+        systemAudioURL: URL? = nil,
+        isSystemAudioEncrypted: Bool = false,
+        systemAudioTranscript: String = ""
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -49,6 +55,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         self.isAudioEncrypted = isAudioEncrypted
         self.workflow = workflow
         self.meetingMetadata = meetingMetadata
+        self.systemAudioURL = systemAudioURL
+        self.isSystemAudioEncrypted = isSystemAudioEncrypted
+        self.systemAudioTranscript = systemAudioTranscript
     }
 
     var displayTranscript: String {
@@ -77,6 +86,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         case isAudioEncrypted
         case workflow
         case meetingMetadata
+        case systemAudioURL
+        case isSystemAudioEncrypted
+        case systemAudioTranscript
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +108,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         isAudioEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isAudioEncrypted) ?? false
         workflow = try container.decodeIfPresent(TranscriptWorkflow.self, forKey: .workflow) ?? .dictation
         meetingMetadata = try container.decodeIfPresent(MeetingMetadata.self, forKey: .meetingMetadata)
+        systemAudioURL = try container.decodeIfPresent(URL.self, forKey: .systemAudioURL)
+        isSystemAudioEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isSystemAudioEncrypted) ?? false
+        systemAudioTranscript = try container.decodeIfPresent(String.self, forKey: .systemAudioTranscript) ?? ""
     }
 }
 
@@ -135,6 +150,28 @@ enum MeetingSource: String, Hashable, Codable {
     case microphone
     case importedAudio
     case microphoneAndSystemAudio
+
+    var label: String {
+        switch self {
+        case .microphone:
+            "Mic only"
+        case .importedAudio:
+            "Imported audio"
+        case .microphoneAndSystemAudio:
+            "Mic + system"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .microphone:
+            "mic"
+        case .importedAudio:
+            "waveform"
+        case .microphoneAndSystemAudio:
+            "speaker.wave.2"
+        }
+    }
 }
 
 enum DiarizationStatus: String, Hashable, Codable {

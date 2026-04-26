@@ -67,6 +67,23 @@ struct ReadinessCheckView: View {
                 } secondaryAction: {}
 
                 ReadinessRow(
+                    title: "Speaker Diarization",
+                    detail: store.diarizationModelLoadState.detail,
+                    systemImage: "person.2",
+                    state: diarizationReadinessState,
+                    primaryTitle: diarizationPrimaryTitle,
+                    primarySystemImage: diarizationPrimaryIcon,
+                    secondaryTitle: nil,
+                    secondarySystemImage: nil
+                ) {
+                    if case .downloadRequired = store.diarizationModelLoadState {
+                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                    } else {
+                        Task { await store.prepareDiarizer() }
+                    }
+                } secondaryAction: {}
+
+                ReadinessRow(
                     title: store.privacyMode.label,
                     detail: store.privacyMode.detail,
                     systemImage: store.offlineMode ? "wifi.slash" : (store.privacyMode.contentLeavesDevice ? "network" : "lock.shield"),
@@ -132,6 +149,51 @@ struct ReadinessCheckView: View {
 
     private var needsAttention: Bool {
         permissions.needsAttention || !store.modelLoadState.isReady
+    }
+
+    private var diarizationReadinessState: ReadinessState {
+        switch store.diarizationModelLoadState {
+        case .ready:
+            .ready("Ready")
+        case .loadingCached, .downloading:
+            .working("Loading")
+        case .failed:
+            .blocked("Failed")
+        case .downloadRequired:
+            .blocked("Download")
+        case .idle:
+            .attention("Optional")
+        }
+    }
+
+    private var diarizationPrimaryTitle: String? {
+        switch store.diarizationModelLoadState {
+        case .ready:
+            nil
+        case .loadingCached, .downloading:
+            "Loading"
+        case .downloadRequired:
+            "Settings"
+        case .failed:
+            "Retry"
+        case .idle:
+            "Load"
+        }
+    }
+
+    private var diarizationPrimaryIcon: String? {
+        switch store.diarizationModelLoadState {
+        case .ready:
+            nil
+        case .loadingCached, .downloading:
+            "hourglass"
+        case .downloadRequired:
+            "gearshape"
+        case .failed:
+            "arrow.clockwise"
+        case .idle:
+            "arrow.down.circle"
+        }
     }
 
     private var modelReadinessState: ReadinessState {

@@ -100,13 +100,13 @@ distribution features that depend on those foundations.
 
 ## 6. Advanced Transcription and App-Aware Workflows
 
-- [ ] Add a dedicated meeting mode that captures microphone and system audio as
+- [x] Add a dedicated meeting mode that captures microphone and system audio as
   separate sources, stores their privacy/retention metadata, and keeps dictation
   workflows separate from meeting sessions.
-- [~] Add meeting transcription primitives on top of meeting mode: VAD-aware
+- [x] Add meeting transcription primitives on top of meeting mode: VAD-aware
   chunking, speaker diarization, speaker-separated transcript formatting, and
   meeting-specific export hooks.
-- [ ] Add meeting notes workflows with built-in and custom templates, explicit
+- [~] Add meeting notes workflows with built-in and custom templates, explicit
   post-processing provider selection, regeneration with a different template,
   and export to Markdown/PDF.
 - [ ] Add optional calendar-aware meeting assistance, including upcoming-meeting

@@ -47,9 +47,11 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Clipboard copy templates for plain transcript, Markdown, and notes.
 - Batch import audio files and batch export visible transcripts.
 - JSON CLI contract and file-based CLI transcription/export automation.
-- Meeting recordings with FluidAudio offline speaker diarization, anonymous
-  speaker labels on timed live transcript segments, and speaker-separated text,
+- Meeting recordings with separate microphone and system-audio source metadata,
+  FluidAudio offline and live LS-EEND speaker diarization, anonymous speaker
+  labels on timed live transcript segments, and speaker-separated text,
   Markdown, JSON, and SRT exports.
+- Meeting audio import and built-in Markdown/PDF meeting notes templates.
 - Development launcher that creates a stable local signing identity so macOS
   permissions survive rebuilds.
 
@@ -58,6 +60,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - macOS 14 or newer.
 - Xcode command line tools or Xcode with Swift 5.9 support.
 - Microphone permission for recording.
+- Screen Recording permission for optional system-audio capture in meeting
+  recordings.
 - Accessibility permission for global dictation paste.
 - Network access on first model use so FluidAudio can download model artifacts.
 
@@ -148,10 +152,10 @@ nothing" copies or pastes the transcript and then removes the dictation session
 from history.
 
 Offline mode is available in Settings. When it is on, Muesli will only record or
-transcribe with a selected model that is already cached locally. If the model is
-missing, the app shows a download-required state instead of starting FluidAudio
-and allowing a model download. Turn offline mode off once to cache a model, then
-turn it back on for offline use.
+transcribe or diarize with selected models that are already cached locally. If a
+required model is missing, the app shows a download-required state instead of
+starting FluidAudio and allowing a model download. Turn offline mode off once to
+cache ASR or speaker diarization models, then turn it back on for offline use.
 
 When a recoverable setup issue occurs, Muesli shows an issue banner in the main
 window and menu bar with the relevant recovery action, such as opening
@@ -167,14 +171,24 @@ Run the app:
 ```
 
 Use the main window or menu bar item to record, transcribe, export, copy,
-delete, and edit transcripts. Use the Meeting button for recordings where
-speaker-separated output matters. After transcription, the Diarize action adds
-anonymous speaker labels to timed live transcript segments using FluidAudio's
-offline diarization pipeline, then exports those labels in text, Markdown, JSON,
-and SRT formats. If FluidAudio diarization models are unavailable, Muesli can
-fall back to a local timing-based formatter and marks the diarization metadata as
-unavailable. Speaker labels are anonymous; Muesli does not identify real people
-or persist speaker names.
+delete, and edit transcripts. Use the Meeting button in the toolbar for
+recordings where speaker-separated output matters. Meeting recordings capture
+the microphone for live transcription and, when macOS allows ScreenCaptureKit
+capture, store system audio as a separate source file for meeting metadata and
+retention handling. During meeting recording, Muesli starts FluidAudio LS-EEND
+live diarization when the model is available and assigns anonymous speaker
+labels to timed live transcript segments. When system audio is captured, Muesli
+also transcribes that source after the microphone pass and includes it as a
+separate system-audio transcript. After transcription, the Diarize action can
+rerun FluidAudio's offline diarization pipeline over the saved recording, then
+exports those labels in text, Markdown, JSON, and SRT formats. If FluidAudio
+diarization models are unavailable, Muesli can fall back to a local timing-based
+formatter and marks the diarization metadata as unavailable. Speaker labels are
+anonymous; Muesli does not identify real people or persist speaker names.
+
+Use Files > Import Meeting Audio to import an existing meeting recording as a
+meeting session. Meeting exports include built-in Markdown and PDF notes
+templates for standard notes, decisions, and standups.
 
 Use the Files toolbar menu to import one recording, batch import several audio
 files, or export the currently visible transcript list. Imported audio is copied

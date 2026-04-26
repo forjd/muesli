@@ -49,6 +49,13 @@
 - Added the first meeting workflow slice with meeting-tagged recordings,
   FluidAudio offline speaker diarization for timed live transcript segments,
   anonymous speaker labels, and speaker-separated exports.
+- Added meeting source metadata, optional system-audio capture through
+  ScreenCaptureKit, and Settings/readiness controls for speaker diarization
+  model loading.
+- Added meeting audio import, separate system-audio transcript capture for
+  meeting recordings, and built-in Markdown meeting notes templates.
+- Added live LS-EEND speaker diarization during meeting recording and PDF export
+  for built-in meeting notes templates.
 
 ## [0.2.0](https://github.com/forjd/muesli/compare/v0.1.2...v0.2.0) (2026-04-26)
 

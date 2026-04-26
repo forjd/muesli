@@ -29,6 +29,48 @@ enum DiarizationError: LocalizedError {
 
 actor FluidAudioDiarizer {
     private var manager = OfflineDiarizerManager()
+    private var liveDiarizer: LSEENDDiarizer?
+
+    func prepare(allowsModelDownload: Bool) async throws {
+        if allowsModelDownload {
+            try await manager.prepareModels()
+        } else {
+            try Self.requireCachedOfflineModels()
+            let models = try await Self.loadCachedOfflineModels(from: OfflineDiarizerModels.defaultModelsDirectory())
+            manager.initialize(models: models)
+        }
+    }
+
+    func startLive(allowsModelDownload: Bool) async throws {
+        if !allowsModelDownload {
+            try Self.requireCachedLSEENDModels()
+        }
+        let diarizer = LSEENDDiarizer()
+        let descriptor = try await LSEENDModelDescriptor.loadFromHuggingFace(variant: .dihard3)
+        try diarizer.initialize(descriptor: descriptor)
+        liveDiarizer = diarizer
+    }
+
+    func diarizeLiveChunk(chunkURL: URL) async throws -> [SpeakerTurn] {
+        guard let liveDiarizer else { return [] }
+        let samples = try AudioConverter().resampleAudioFile(chunkURL)
+        _ = try liveDiarizer.process(samples: samples, sourceSampleRate: 16_000)
+        return Self.speakerTurns(fromDiarizerSegments: liveDiarizer.timeline.speakers.values.flatMap(\.finalizedSegments))
+    }
+
+    @discardableResult
+    func finishLive() -> [SpeakerTurn] {
+        let speakerTurns: [SpeakerTurn]
+        if let liveDiarizer {
+            liveDiarizer.timeline.finalize()
+            speakerTurns = Self.speakerTurns(fromDiarizerSegments: liveDiarizer.timeline.speakers.values.flatMap(\.finalizedSegments))
+            liveDiarizer.reset()
+        } else {
+            speakerTurns = []
+        }
+        liveDiarizer = nil
+        return speakerTurns
+    }
 
     func diarize(
         audioURL: URL,
@@ -49,6 +91,10 @@ actor FluidAudioDiarizer {
 
     static func offlineModelsAreCached(in modelsDirectory: URL = OfflineDiarizerModels.defaultModelsDirectory()) -> Bool {
         (try? requireCachedOfflineModels(in: modelsDirectory)) != nil
+    }
+
+    static func lseendModelsAreCached(in modelsDirectory: URL = OfflineDiarizerModels.defaultModelsDirectory()) -> Bool {
+        (try? requireCachedLSEENDModels(in: modelsDirectory)) != nil
     }
 
     static func requireCachedOfflineModels(in modelsDirectory: URL = OfflineDiarizerModels.defaultModelsDirectory()) throws {
@@ -87,6 +133,44 @@ actor FluidAudioDiarizer {
                     qualityScore: segment.qualityScore
                 )
             }
+    }
+
+    static func speakerTurns(fromDiarizerSegments segments: [DiarizerSegment]) -> [SpeakerTurn] {
+        var speakerLabels: [String: String] = [:]
+
+        return segments
+            .sorted { lhs, rhs in
+                if lhs.startTime == rhs.startTime {
+                    return lhs.speakerIndex < rhs.speakerIndex
+                }
+                return lhs.startTime < rhs.startTime
+            }
+            .map { segment in
+                let speakerID = String(segment.speakerIndex)
+                let label = speakerLabels[speakerID] ?? {
+                    let label = "Speaker \(speakerLabels.count + 1)"
+                    speakerLabels[speakerID] = label
+                    return label
+                }()
+                return SpeakerTurn(
+                    speakerID: speakerID,
+                    speakerLabel: label,
+                    startTime: TimeInterval(segment.startTime),
+                    endTime: TimeInterval(segment.endTime),
+                    qualityScore: segment.activity
+                )
+            }
+    }
+
+    private static func requireCachedLSEENDModels(in modelsDirectory: URL = OfflineDiarizerModels.defaultModelsDirectory()) throws {
+        let repoDirectory = modelsDirectory.appending(path: Repo.lseend.folderName, directoryHint: .isDirectory)
+        let fileManager = FileManager.default
+        let hasRequiredModels = LSEENDVariant.dihard3.fileNames.allSatisfy { fileName in
+            fileManager.fileExists(atPath: repoDirectory.appending(path: fileName).path)
+        }
+        guard hasRequiredModels else {
+            throw DiarizationError.diarizationModelDownloadRequired
+        }
     }
 
     private static func loadCachedOfflineModels(from modelsDirectory: URL) async throws -> OfflineDiarizerModels {

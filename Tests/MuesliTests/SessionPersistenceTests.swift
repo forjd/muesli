@@ -4,9 +4,33 @@ import CryptoKit
 struct SessionPersistenceTests {
     static func run() throws {
         try testSaveAndLoadSessions()
+        try testSaveAndLoadMeetingSourceMetadata()
         try testInterruptedSessionsLoadAsRecorded()
         try testSaveEncryptsSessionMetadata()
         try testPlaintextSessionsAreMigratedToEncryptedStorage()
+    }
+
+    private static func testSaveAndLoadMeetingSourceMetadata() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let persistence = SessionPersistence(appSupportDirectory: directory, secureStorage: testSecureStorage())
+        let session = TranscriptSession(
+            createdAt: Date(timeIntervalSince1970: 4_000),
+            audioURL: directory.appending(path: "mic.wav"),
+            model: .v3,
+            status: .complete,
+            transcript: "meeting",
+            isAudioEncrypted: true,
+            workflow: .meeting,
+            meetingMetadata: MeetingMetadata(diarizationStatus: .complete, speakerCount: 2, source: .microphoneAndSystemAudio),
+            systemAudioURL: directory.appending(path: "system.m4a"),
+            isSystemAudioEncrypted: true
+        )
+
+        try persistence.save([session])
+
+        try expectEqual(persistence.load(), [session])
     }
 
     private static func testSaveAndLoadSessions() throws {

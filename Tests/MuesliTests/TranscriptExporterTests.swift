@@ -9,6 +9,7 @@ struct TranscriptExporterTests {
         try testSRTExportSortsSegmentsAndEnforcesMinimumDuration()
         try testSRTExportIncludesSpeakerLabels()
         try testMarkdownExportUsesSpeakerTranscriptForMeetings()
+        try testTextExportIncludesSystemAudioTranscriptForMeetings()
         try testSRTExportFallsBackWhenNoSegmentsExist()
     }
 
@@ -123,6 +124,22 @@ struct TranscriptExporterTests {
         try expect(text.contains("- Speakers: 2"), "Missing speaker metadata")
         try expect(text.contains("Speaker 1: hello"), "Missing first speaker transcript")
         try expect(text.contains("Speaker 2: hi"), "Missing second speaker transcript")
+    }
+
+    private static func testTextExportIncludesSystemAudioTranscriptForMeetings() throws {
+        let session = TranscriptSession(
+            audioURL: URL(filePath: "/tmp/audio.wav"),
+            model: .v3,
+            transcript: "mic side",
+            workflow: .meeting,
+            systemAudioTranscript: "system side"
+        )
+
+        let text = String(decoding: try TranscriptExporter.data(for: session, format: .text), as: UTF8.self)
+
+        try expect(text.contains("mic side"), "Missing mic transcript")
+        try expect(text.contains("System audio transcript:"), "Missing system audio heading")
+        try expect(text.contains("system side"), "Missing system transcript")
     }
 
     private static func testSRTExportFallsBackWhenNoSegmentsExist() throws {
