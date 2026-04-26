@@ -8,6 +8,13 @@ struct MuesliApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = TranscriptionStore()
 
+    init() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if let command = arguments.first, MuesliCLI.commandNames.contains(command) {
+            Darwin.exit(MuesliCLI.run(arguments: arguments))
+        }
+    }
+
     var body: some Scene {
         WindowGroup("Muesli", id: "main") {
             ContentView(store: store)

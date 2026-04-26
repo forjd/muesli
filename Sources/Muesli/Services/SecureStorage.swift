@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import LocalAuthentication
 import Security
 
 protocol SecureStorageKeyProvider {
@@ -93,6 +94,9 @@ struct KeychainStorageKeyProvider: SecureStorageKeyProvider {
         var query = baseQuery
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        query[kSecUseAuthenticationContext as String] = context
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
