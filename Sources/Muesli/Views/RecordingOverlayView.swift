@@ -4,6 +4,8 @@ import SwiftUI
 
 @MainActor
 final class RecordingOverlayController {
+    private static let panelSize = NSSize(width: 620, height: 104)
+
     private weak var store: TranscriptionStore?
     private var panel: NSPanel?
     private var cancellables: Set<AnyCancellable> = []
@@ -51,7 +53,7 @@ final class RecordingOverlayController {
     private func makePanel(store: TranscriptionStore) -> NSPanel {
         let rootView = RecordingOverlayView(store: store)
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 500, height: 96),
+            contentRect: NSRect(origin: .zero, size: Self.panelSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -86,9 +88,10 @@ final class RecordingOverlayController {
 
 struct RecordingOverlayView: View {
     @ObservedObject var store: TranscriptionStore
+    private let overlaySize = CGSize(width: 620, height: 104)
 
     var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 18) {
             ZStack(alignment: .bottomTrailing) {
                 Circle()
                     .fill(.red.opacity(0.16))
@@ -111,7 +114,10 @@ struct RecordingOverlayView: View {
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .lineLimit(1)
-                        .frame(width: 78, alignment: .leading)
+                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .frame(width: 98, alignment: .leading)
+                        .layoutPriority(2)
 
                     StatusBadge(title: store.dictationHotKeyMode.label, systemImage: "keyboard")
 
@@ -136,8 +142,8 @@ struct RecordingOverlayView: View {
                 store.cancelDictation()
             }
         }
-        .padding(.horizontal, 18)
-        .frame(width: 500, height: 96)
+        .padding(.horizontal, 20)
+        .frame(width: overlaySize.width, height: overlaySize.height)
         .background {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.regularMaterial)
