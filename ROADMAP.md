@@ -42,6 +42,9 @@ distribution features that depend on those foundations.
 - [x] Add a lightweight screen overlay while recording, including elapsed time,
   audio level, active mode, privacy state, and clear stop/cancel affordances.
   Decide whether it should appear above full-screen apps.
+- [ ] Add VAD-driven chunk rotation so live transcription splits audio at natural
+  speech pauses instead of fixed intervals. Preserve privacy/storage guarantees
+  for generated chunks and surface partial-failure recovery.
 
 ## 3. Transcription Correction and Profiles
 
@@ -60,6 +63,9 @@ distribution features that depend on those foundations.
   using the selected dictionary profile, with clear download, latency, and
   streaming-accuracy limits. Keep replacement rules as a fallback correction
   layer.
+- [ ] Add optional fuzzy dictionary matching with conservative thresholds,
+  per-profile enablement, and visible review of proposed replacements before
+  applying broad automatic corrections.
 
 ## 4. File Workflows and Automation
 
@@ -68,6 +74,9 @@ distribution features that depend on those foundations.
   imported audio follows encryption, retention, and never-save-audio settings.
 - [ ] Add richer export options for Markdown, DOCX, and clipboard templates.
 - [ ] Add search and filtering across saved recordings and transcripts.
+- [ ] Add a machine-readable JSON command contract for the CLI, including a
+  `spec` command, stable success/error envelopes, schema version, warnings, and
+  actionable `fix` fields for failures.
 - [ ] Add batch import and export for processing multiple recordings or transcripts,
   with progress reporting, partial failure handling, and optional
   post-processing.
@@ -91,6 +100,18 @@ distribution features that depend on those foundations.
 
 ## 6. Advanced Transcription and App-Aware Workflows
 
+- [ ] Add a dedicated meeting mode that captures microphone and system audio as
+  separate sources, stores their privacy/retention metadata, and keeps dictation
+  workflows separate from meeting sessions.
+- [ ] Add meeting transcription primitives on top of meeting mode: VAD-aware
+  chunking, speaker diarization, speaker-separated transcript formatting, and
+  meeting-specific export hooks.
+- [ ] Add meeting notes workflows with built-in and custom templates, explicit
+  post-processing provider selection, regeneration with a different template,
+  and export to Markdown/PDF.
+- [ ] Add optional calendar-aware meeting assistance, including upcoming-meeting
+  detection, meeting URL extraction, and clear join-only, record-only, and
+  join-and-record actions.
 - [ ] Add speaker diarization for meetings, interviews, and other multi-speaker
   recordings. Start with anonymous speaker labels and speaker-separated
   formatting, then investigate persistent speaker naming later.
@@ -103,8 +124,14 @@ distribution features that depend on those foundations.
 
 - [ ] Keep CI focused on build health, logic tests, packaging, and release artifact
   integrity.
+- [ ] Add a model management view for cached and available models, including
+  background download, delete, selected-model switching, cache size, offline-mode
+  compatibility, and download failure recovery.
 - [ ] Improve first-run onboarding for permissions, model download, offline mode,
   and global hotkey setup.
+- [ ] Add a live dictation test to onboarding that verifies the full record,
+  transcribe, copy/paste, permission, hotkey, and selected-model pipeline before
+  marking setup complete.
 - [ ] Add notarization support for release builds.
 - [?] Add automatic updates for installed release builds. Evaluate Sparkle against
   GitHub Releases-based updating, including stable and beta channel support.
