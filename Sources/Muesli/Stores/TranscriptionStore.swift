@@ -246,6 +246,49 @@ final class TranscriptionStore: ObservableObject {
         persistence.recordingsDirectory
     }
 
+    func importAudioFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = AudioImportFormat.contentTypes
+        panel.message = "Choose an audio file to copy into Muesli and transcribe."
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        Task {
+            await importAudioFile(at: url, transcribeAfterImport: true)
+        }
+    }
+
+    func importAudioFile(at sourceURL: URL, transcribeAfterImport: Bool = false) async {
+        guard !isBusy, !isRecording else { return }
+        guard AudioImportFormat.isSupported(sourceURL) else {
+            statusMessage = "Unsupported audio format. Import WAV, M4A, MP3, AIFF, or CAF."
+            return
+        }
+
+        isBusy = true
+        defer { isBusy = false }
+
+        do {
+            let importedURL = try copyImportedAudio(from: sourceURL)
+            var session = TranscriptSession(audioURL: importedURL, model: selectedModel, status: .recorded)
+            sessions.insert(session, at: 0)
+            selectedSessionID = session.id
+            updateRecordingMetadata(at: 0)
+            session = sessions[0]
+            statusMessage = "Imported \(sourceURL.lastPathComponent)."
+            scheduleSave()
+
+            if transcribeAfterImport {
+                isBusy = false
+                await transcribe(sessionID: session.id)
+            }
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
     func toggleRecording() async {
         if isRecording {
             if let sessionID = stopRecording() {
@@ -1420,6 +1463,15 @@ final class TranscriptionStore: ObservableObject {
 
     private func deleteAudioFile(for session: TranscriptSession) {
         try? FileManager.default.removeItem(at: session.audioURL)
+    }
+
+    private func copyImportedAudio(from sourceURL: URL) throws -> URL {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: recordingsDirectoryURL, withIntermediateDirectories: true)
+        let extensionName = sourceURL.pathExtension.lowercased()
+        let destinationURL = recordingsDirectoryURL.appending(path: "import-\(UUID().uuidString).\(extensionName)")
+        try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        return destinationURL
     }
 
     private func temporaryReadableAudioURL(for session: TranscriptSession) throws -> URL {

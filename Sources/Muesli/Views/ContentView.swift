@@ -46,6 +46,15 @@ struct ContentView: View {
                 .help("Transcribe latest recording")
                 .disabled(store.latestRecordingURL == nil || store.isBusy)
                 .keyboardShortcut("t", modifiers: [.command])
+
+                Button {
+                    store.importAudioFile()
+                } label: {
+                    Label("Import Audio", systemImage: "square.and.arrow.down")
+                }
+                .labelStyle(.iconOnly)
+                .help("Import an audio file")
+                .disabled(store.isBusy || store.isRecording)
             }
 
             ToolbarItem {

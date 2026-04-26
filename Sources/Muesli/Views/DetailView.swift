@@ -270,6 +270,15 @@ private struct EmptyRecordingView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .disabled(store.isBusy)
+
+                Button {
+                    store.importAudioFile()
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(store.isBusy || store.isRecording)
             }
         }
         .padding(40)
@@ -504,6 +513,11 @@ private struct RecordingActionBar: View {
             }
             .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
 
+            Button("Import", systemImage: "square.and.arrow.down") {
+                store.importAudioFile()
+            }
+            .disabled(store.isBusy || store.isRecording)
+
             if store.isRecording, session.status == .recording {
                 Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
                     store.cancelDictation()
@@ -560,6 +574,11 @@ private struct RecordingActionBar: View {
                     store.copyTranscript(sessionID: session.id)
                 }
                 .disabled(session.displayTranscript.isEmpty)
+
+                Button("Import Audio", systemImage: "square.and.arrow.down") {
+                    store.importAudioFile()
+                }
+                .disabled(store.isBusy || store.isRecording)
 
                 Button("Export Text") {
                     store.exportTranscript(sessionID: session.id, format: .text)
