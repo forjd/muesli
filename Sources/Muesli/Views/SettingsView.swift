@@ -6,6 +6,8 @@ struct SettingsView: View {
     @ObservedObject var store: TranscriptionStore
     @StateObject private var hotKeyRecorder = HotKeyRecorder()
     @State private var isShowingDeleteAllConfirmation = false
+    @State private var replacementFind = ""
+    @State private var replacementReplace = ""
 
     var body: some View {
         Form {
@@ -197,6 +199,53 @@ struct SettingsView: View {
                 Text("Custom shortcuts must include Command, Option, or Control. Press Escape to cancel recording.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Replacements") {
+                HStack {
+                    TextField("Find", text: $replacementFind)
+                    TextField("Replace with", text: $replacementReplace)
+                    Button("Add", systemImage: "plus") {
+                        store.addReplacementRule(find: replacementFind, replace: replacementReplace)
+                        replacementFind = ""
+                        replacementReplace = ""
+                    }
+                    .disabled(replacementFind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                if let suggestion = store.lastManualReplacementSuggestion {
+                    Button("Promote Last Manual Edit", systemImage: "wand.and.stars") {
+                        store.promoteLastManualEditReplacement()
+                    }
+                    Text("Suggested replacement: \(suggestion.find) -> \(suggestion.replace)")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                if store.replacementRules.isEmpty {
+                    Text("Replacement rules run after transcription for deterministic cleanup.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    List {
+                        ForEach(store.replacementRules) { rule in
+                            HStack {
+                                Text(rule.find)
+                                Image(systemName: "arrow.right")
+                                    .foregroundStyle(.secondary)
+                                Text(rule.replace)
+                                Spacer()
+                                if !rule.isEnabled {
+                                    Text("Off")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .onDelete(perform: store.removeReplacementRules)
+                    }
+                    .frame(minHeight: 90)
+                }
             }
         }
         .formStyle(.grouped)

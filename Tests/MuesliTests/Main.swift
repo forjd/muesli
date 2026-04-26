@@ -6,6 +6,7 @@ struct MuesliTestRunner {
         try DictationFeedbackEventTests.run()
         try DictationStorageModeTests.run()
         try RetentionPolicyTests.run()
+        try ReplacementRuleTests.run()
         try SecureStorageTests.run()
         try SessionPersistenceTests.run()
         try TranscriptExporterTests.run()

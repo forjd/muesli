@@ -45,7 +45,7 @@ distribution features that depend on those foundations.
 
 ## 3. Transcription Correction and Profiles
 
-- [ ] Add replacement rules for deterministic cleanup, such as expanding shorthand,
+- [x] Add replacement rules for deterministic cleanup, such as expanding shorthand,
   fixing repeated mistranscriptions, or enforcing punctuation and casing. Let
   users promote manual transcript edits into future replacement suggestions.
 - [ ] Add a custom dictionary for preferred words, names, product terms, acronyms,

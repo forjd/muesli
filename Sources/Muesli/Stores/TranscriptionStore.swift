@@ -16,6 +16,7 @@ final class TranscriptionStore: ObservableObject {
         static let dictationStorageMode = "dictationStorageMode"
         static let offlineMode = "offlineMode"
         static let soundEffectsEnabled = "soundEffectsEnabled"
+        static let replacementRules = "replacementRules"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -78,6 +79,14 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(soundEffectsEnabled, forKey: PreferenceKey.soundEffectsEnabled)
         }
     }
+    @Published var replacementRules: [ReplacementRule] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(replacementRules) {
+                UserDefaults.standard.set(data, forKey: PreferenceKey.replacementRules)
+            }
+        }
+    }
+    @Published var lastManualReplacementSuggestion: ReplacementRule?
     @Published var retentionPolicy = RetentionPolicy() {
         didSet {
             retentionPolicy.days = RetentionPolicy.clampedDays(retentionPolicy.days)
@@ -142,6 +151,10 @@ final class TranscriptionStore: ObservableObject {
         }
         if defaults.object(forKey: PreferenceKey.soundEffectsEnabled) != nil {
             soundEffectsEnabled = defaults.bool(forKey: PreferenceKey.soundEffectsEnabled)
+        }
+        if let replacementRulesData = defaults.data(forKey: PreferenceKey.replacementRules),
+           let rules = try? JSONDecoder().decode([ReplacementRule].self, from: replacementRulesData) {
+            replacementRules = rules
         }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
@@ -401,7 +414,7 @@ final class TranscriptionStore: ObservableObject {
             let result = try await transcriber.transcribe(audioURL: transcriptionAudioURL, model: model)
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                 sessions[updatedIndex].status = .complete
-                let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmed = applyReplacementRules(to: result.text.trimmingCharacters(in: .whitespacesAndNewlines))
                 sessions[updatedIndex].finalTranscript = trimmed
                 if !trimmed.isEmpty {
                     sessions[updatedIndex].transcript = trimmed
@@ -966,6 +979,7 @@ final class TranscriptionStore: ObservableObject {
     func updateTranscript(sessionID: TranscriptSession.ID, text: String) {
         guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = sessions[index].displayTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !sessions[index].finalTranscript.isEmpty {
             sessions[index].finalTranscript = trimmed
@@ -974,8 +988,36 @@ final class TranscriptionStore: ObservableObject {
         }
 
         sessions[index].transcript = trimmed
+        if !previous.isEmpty, !trimmed.isEmpty, previous != trimmed {
+            lastManualReplacementSuggestion = ReplacementRule(find: previous, replace: trimmed, isEnabled: false)
+        }
         statusMessage = "Transcript updated."
         scheduleSave()
+    }
+
+    func addReplacementRule(find: String, replace: String) {
+        let find = find.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !find.isEmpty else { return }
+        replacementRules.append(ReplacementRule(find: find, replace: replace))
+        statusMessage = "Replacement rule added."
+    }
+
+    func removeReplacementRules(at offsets: IndexSet) {
+        for offset in offsets.sorted(by: >) {
+            replacementRules.remove(at: offset)
+        }
+    }
+
+    func promoteLastManualEditReplacement() {
+        guard var suggestion = lastManualReplacementSuggestion else { return }
+        suggestion.isEnabled = true
+        replacementRules.append(suggestion)
+        lastManualReplacementSuggestion = nil
+        statusMessage = "Manual edit saved as a replacement rule."
+    }
+
+    private func applyReplacementRules(to text: String) -> String {
+        ReplacementRuleEngine(rules: replacementRules).apply(to: text)
     }
 
     func exportTranscript(sessionID: TranscriptSession.ID, format: TranscriptExportFormat) {

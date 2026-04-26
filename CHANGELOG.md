@@ -22,6 +22,8 @@
   workflows.
 - Added a floating recording overlay with elapsed time, audio level, mode,
   privacy state, stop, and cancel controls.
+- Added replacement rules for deterministic transcript cleanup, with a promotion
+  action for the last manual transcript edit.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 
