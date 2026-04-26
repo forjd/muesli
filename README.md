@@ -32,6 +32,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
   state, stop, and cancel controls.
 - Replacement rules for deterministic transcript cleanup and promoted manual
   edit suggestions.
+- Custom dictionary terms for preferred names, product terms, acronyms, and
+  domain vocabulary.
 - One-shot global dictation using `Command-Shift-D`.
 - Configurable dictation behavior for toggle, push-to-talk, and hybrid workflows.
 - Menu bar controls for dictation, recording, model selection, and settings.

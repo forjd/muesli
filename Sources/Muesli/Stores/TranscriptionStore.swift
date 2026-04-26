@@ -17,6 +17,7 @@ final class TranscriptionStore: ObservableObject {
         static let offlineMode = "offlineMode"
         static let soundEffectsEnabled = "soundEffectsEnabled"
         static let replacementRules = "replacementRules"
+        static let customDictionaryTerms = "customDictionaryTerms"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -83,6 +84,13 @@ final class TranscriptionStore: ObservableObject {
         didSet {
             if let data = try? JSONEncoder().encode(replacementRules) {
                 UserDefaults.standard.set(data, forKey: PreferenceKey.replacementRules)
+            }
+        }
+    }
+    @Published var customDictionaryTerms: [CustomDictionaryTerm] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(customDictionaryTerms) {
+                UserDefaults.standard.set(data, forKey: PreferenceKey.customDictionaryTerms)
             }
         }
     }
@@ -155,6 +163,10 @@ final class TranscriptionStore: ObservableObject {
         if let replacementRulesData = defaults.data(forKey: PreferenceKey.replacementRules),
            let rules = try? JSONDecoder().decode([ReplacementRule].self, from: replacementRulesData) {
             replacementRules = rules
+        }
+        if let dictionaryData = defaults.data(forKey: PreferenceKey.customDictionaryTerms),
+           let terms = try? JSONDecoder().decode([CustomDictionaryTerm].self, from: dictionaryData) {
+            customDictionaryTerms = terms
         }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
@@ -1008,6 +1020,20 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
+    func addCustomDictionaryTerm(_ value: String) {
+        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        guard customDictionaryTerms.contains(where: { $0.value.caseInsensitiveCompare(value) == .orderedSame }) == false else { return }
+        customDictionaryTerms.append(CustomDictionaryTerm(value: value))
+        statusMessage = "Dictionary term added."
+    }
+
+    func removeCustomDictionaryTerms(at offsets: IndexSet) {
+        for offset in offsets.sorted(by: >) {
+            customDictionaryTerms.remove(at: offset)
+        }
+    }
+
     func promoteLastManualEditReplacement() {
         guard var suggestion = lastManualReplacementSuggestion else { return }
         suggestion.isEnabled = true
@@ -1017,7 +1043,8 @@ final class TranscriptionStore: ObservableObject {
     }
 
     private func applyReplacementRules(to text: String) -> String {
-        ReplacementRuleEngine(rules: replacementRules).apply(to: text)
+        let replaced = ReplacementRuleEngine(rules: replacementRules).apply(to: text)
+        return CustomDictionaryEngine(terms: customDictionaryTerms).apply(to: replaced)
     }
 
     func exportTranscript(sessionID: TranscriptSession.ID, format: TranscriptExportFormat) {

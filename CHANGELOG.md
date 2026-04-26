@@ -24,6 +24,8 @@
   privacy state, stop, and cancel controls.
 - Added replacement rules for deterministic transcript cleanup, with a promotion
   action for the last manual transcript edit.
+- Added a custom dictionary correction layer for preferred words, names, product
+  terms, acronyms, and domain vocabulary.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 

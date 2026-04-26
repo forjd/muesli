@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var isShowingDeleteAllConfirmation = false
     @State private var replacementFind = ""
     @State private var replacementReplace = ""
+    @State private var dictionaryTerm = ""
 
     var body: some View {
         Form {
@@ -243,6 +244,38 @@ struct SettingsView: View {
                             }
                         }
                         .onDelete(perform: store.removeReplacementRules)
+                    }
+                    .frame(minHeight: 90)
+                }
+            }
+
+            Section("Custom Dictionary") {
+                HStack {
+                    TextField("Preferred word, name, acronym, or term", text: $dictionaryTerm)
+                    Button("Add", systemImage: "plus") {
+                        store.addCustomDictionaryTerm(dictionaryTerm)
+                        dictionaryTerm = ""
+                    }
+                    .disabled(dictionaryTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                if store.customDictionaryTerms.isEmpty {
+                    Text("Dictionary terms are applied as a correction layer after transcription.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    List {
+                        ForEach(store.customDictionaryTerms) { term in
+                            HStack {
+                                Text(term.value)
+                                Spacer()
+                                if !term.isEnabled {
+                                    Text("Off")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .onDelete(perform: store.removeCustomDictionaryTerms)
                     }
                     .frame(minHeight: 90)
                 }

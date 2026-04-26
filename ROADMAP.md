@@ -48,7 +48,7 @@ distribution features that depend on those foundations.
 - [x] Add replacement rules for deterministic cleanup, such as expanding shorthand,
   fixing repeated mistranscriptions, or enforcing punctuation and casing. Let
   users promote manual transcript edits into future replacement suggestions.
-- [ ] Add a custom dictionary for preferred words, names, product terms, acronyms,
+- [x] Add a custom dictionary for preferred words, names, product terms, acronyms,
   and domain-specific vocabulary. Treat the first version as a correction layer
   unless FluidAudio or Parakeet exposes direct vocabulary biasing.
 - [ ] Support profile-specific dictionaries so users can switch between general,
