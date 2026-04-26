@@ -14,6 +14,8 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
     var fileSize: Int64?
     var errorMessage: String?
     var isAudioEncrypted: Bool
+    var workflow: TranscriptWorkflow
+    var meetingMetadata: MeetingMetadata?
 
     init(
         id: UUID = UUID(),
@@ -28,7 +30,9 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         duration: TimeInterval? = nil,
         fileSize: Int64? = nil,
         errorMessage: String? = nil,
-        isAudioEncrypted: Bool = false
+        isAudioEncrypted: Bool = false,
+        workflow: TranscriptWorkflow = .dictation,
+        meetingMetadata: MeetingMetadata? = nil
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -43,6 +47,8 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         self.fileSize = fileSize
         self.errorMessage = errorMessage
         self.isAudioEncrypted = isAudioEncrypted
+        self.workflow = workflow
+        self.meetingMetadata = meetingMetadata
     }
 
     var displayTranscript: String {
@@ -69,6 +75,8 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         case fileSize
         case errorMessage
         case isAudioEncrypted
+        case workflow
+        case meetingMetadata
     }
 
     init(from decoder: Decoder) throws {
@@ -86,7 +94,53 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
         isAudioEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isAudioEncrypted) ?? false
+        workflow = try container.decodeIfPresent(TranscriptWorkflow.self, forKey: .workflow) ?? .dictation
+        meetingMetadata = try container.decodeIfPresent(MeetingMetadata.self, forKey: .meetingMetadata)
     }
+}
+
+enum TranscriptWorkflow: String, CaseIterable, Identifiable, Hashable, Codable {
+    case dictation
+    case meeting
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .dictation:
+            "Dictation"
+        case .meeting:
+            "Meeting"
+        }
+    }
+}
+
+struct MeetingMetadata: Hashable, Codable {
+    var diarizationStatus: DiarizationStatus
+    var speakerCount: Int
+    var source: MeetingSource
+
+    init(
+        diarizationStatus: DiarizationStatus = .notStarted,
+        speakerCount: Int = 0,
+        source: MeetingSource = .microphone
+    ) {
+        self.diarizationStatus = diarizationStatus
+        self.speakerCount = speakerCount
+        self.source = source
+    }
+}
+
+enum MeetingSource: String, Hashable, Codable {
+    case microphone
+    case importedAudio
+    case microphoneAndSystemAudio
+}
+
+enum DiarizationStatus: String, Hashable, Codable {
+    case notStarted
+    case unavailable
+    case complete
 }
 
 struct TranscriptSegment: Identifiable, Hashable, Codable {
@@ -96,6 +150,7 @@ struct TranscriptSegment: Identifiable, Hashable, Codable {
     let endTime: TimeInterval
     var text: String
     var source: TranscriptSegmentSource
+    var speakerLabel: String?
 
     init(
         id: UUID = UUID(),
@@ -103,7 +158,8 @@ struct TranscriptSegment: Identifiable, Hashable, Codable {
         startTime: TimeInterval,
         endTime: TimeInterval,
         text: String,
-        source: TranscriptSegmentSource
+        source: TranscriptSegmentSource,
+        speakerLabel: String? = nil
     ) {
         self.id = id
         self.chunkIndex = chunkIndex
@@ -111,6 +167,7 @@ struct TranscriptSegment: Identifiable, Hashable, Codable {
         self.endTime = endTime
         self.text = text
         self.source = source
+        self.speakerLabel = speakerLabel
     }
 }
 

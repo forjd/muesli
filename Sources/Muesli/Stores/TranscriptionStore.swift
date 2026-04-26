@@ -142,6 +142,7 @@ final class TranscriptionStore: ObservableObject {
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
+    private let diarizer = FluidAudioDiarizer()
     private let persistence = SessionPersistence()
     private let secureStorage = SecureStorage()
     private var activeRecordingURL: URL?
@@ -364,6 +365,17 @@ final class TranscriptionStore: ObservableObject {
     }
 
     func startRecording() async {
+        await startRecording(workflow: .dictation)
+    }
+
+    func startMeetingRecording() async {
+        await startRecording(workflow: .meeting)
+        if isRecording {
+            statusMessage = "Meeting recording; stop to transcribe and diarize."
+        }
+    }
+
+    private func startRecording(workflow: TranscriptWorkflow) async {
         guard !isBusy else { return }
 
         let granted = await recorder.requestPermission()
@@ -386,14 +398,21 @@ final class TranscriptionStore: ObservableObject {
                     self?.handleLiveChunk(chunk, sessionID: sessionID)
                 }
             }
-            let session = TranscriptSession(id: sessionID, audioURL: url, model: selectedModel, status: .recording)
+            let session = TranscriptSession(
+                id: sessionID,
+                audioURL: url,
+                model: selectedModel,
+                status: .recording,
+                workflow: workflow,
+                meetingMetadata: workflow == .meeting ? MeetingMetadata() : nil
+            )
             sessions.insert(session, at: 0)
             selectedSessionID = session.id
             activeSessionID = session.id
             liveChunkStats[session.id] = LiveChunkStats()
             activeRecordingURL = url
             isRecording = true
-            publishFeedback(title: "Recording Started", detail: "Listening for dictation.", kind: .recordingStarted)
+            publishFeedback(title: "Recording Started", detail: workflow == .meeting ? "Listening for meeting audio." : "Listening for dictation.", kind: .recordingStarted)
             try await transcriber.startStreaming(sessionID: session.id, model: selectedModel)
             scheduleSave()
             startMetering()
@@ -405,6 +424,93 @@ final class TranscriptionStore: ObservableObject {
                 kind: .microphonePermission,
                 detail: "Muesli could not start the microphone input: \(error.localizedDescription)"
             )
+        }
+    }
+
+    func applyMeetingDiarization(sessionID: TranscriptSession.ID) async {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        guard !sessions[index].segments.isEmpty else {
+            sessions[index].workflow = .meeting
+            sessions[index].meetingMetadata = MeetingMetadata(diarizationStatus: .unavailable, speakerCount: 0)
+            statusMessage = "Diarization needs timed transcript segments from live meeting transcription."
+            scheduleSave()
+            return
+        }
+
+        do {
+            let storedAudioURL = sessions[index].audioURL
+            let diarizationAudioURL = try temporaryReadableAudioURL(for: sessions[index])
+            defer {
+                if diarizationAudioURL != storedAudioURL {
+                    try? FileManager.default.removeItem(at: diarizationAudioURL)
+                }
+            }
+            await applyMeetingDiarization(at: index, audioURL: diarizationAudioURL)
+        } catch {
+            applyMeetingDiarizationFallback(at: index, detail: error.localizedDescription)
+        }
+        scheduleSave()
+    }
+
+    private func applyMeetingDiarizationFallback(at index: Int, detail: String) {
+        guard sessions.indices.contains(index) else { return }
+        guard !sessions[index].segments.isEmpty else {
+            sessions[index].workflow = .meeting
+            sessions[index].meetingMetadata = MeetingMetadata(diarizationStatus: .unavailable, speakerCount: 0)
+            statusMessage = "Diarization needs timed transcript segments from live meeting transcription."
+            return
+        }
+
+        let engine = MeetingDiarizationEngine()
+        let diarizedSegments = engine.fallbackDiarizedSegments(from: sessions[index].segments)
+        let speakerCount = MeetingDiarizationEngine.speakerCount(in: diarizedSegments)
+
+        sessions[index].workflow = .meeting
+        sessions[index].segments = diarizedSegments
+        sessions[index].meetingMetadata = MeetingMetadata(
+            diarizationStatus: .unavailable,
+            speakerCount: speakerCount
+        )
+        statusMessage = speakerCount > 0 ? "FluidAudio diarization unavailable; applied timing fallback. \(detail)" : "No speakers found to label. \(detail)"
+    }
+
+    private func applyMeetingDiarization(at index: Int, audioURL: URL) async {
+        guard sessions.indices.contains(index) else { return }
+        guard !sessions[index].segments.isEmpty else {
+            sessions[index].workflow = .meeting
+            sessions[index].meetingMetadata = MeetingMetadata(diarizationStatus: .unavailable, speakerCount: 0)
+            statusMessage = "Diarization needs timed transcript segments from live meeting transcription."
+            return
+        }
+
+        statusMessage = "Diarizing speakers..."
+
+        do {
+            let sessionID = sessions[index].id
+            let speakerTurns = try await diarizer.diarize(
+                audioURL: audioURL,
+                allowsModelDownload: !offlineMode
+            )
+            guard let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
+            let diarizedSegments = MeetingDiarizationEngine()
+                .assignSpeakerTurns(speakerTurns, to: sessions[updatedIndex].segments)
+            let speakerCount = MeetingDiarizationEngine.speakerCount(in: diarizedSegments)
+
+            sessions[updatedIndex].workflow = .meeting
+            sessions[updatedIndex].segments = diarizedSegments
+            sessions[updatedIndex].meetingMetadata = MeetingMetadata(
+                diarizationStatus: speakerCount > 0 ? .complete : .unavailable,
+                speakerCount: speakerCount
+            )
+            statusMessage = speakerCount > 0 ? "Applied FluidAudio speaker labels." : "FluidAudio diarization found no matching transcript segments."
+        } catch DiarizationError.diarizationModelDownloadRequired {
+            activeIssue = AppIssue(
+                kind: .modelLoad,
+                detail: "Offline mode is on. Turn it off once to download FluidAudio speaker diarization models before using meeting speaker labels."
+            )
+            applyMeetingDiarizationFallback(at: index, detail: DiarizationError.diarizationModelDownloadRequired.localizedDescription)
+        } catch {
+            applyMeetingDiarizationFallback(at: index, detail: error.localizedDescription)
         }
     }
 
@@ -551,6 +657,20 @@ final class TranscriptionStore: ObservableObject {
             sessions[index].status = .complete
             sessions[index].transcript = sessions[index].liveTranscript
             sessions[index].finalTranscript = ""
+            if sessions[index].workflow == .meeting {
+                do {
+                    let storedAudioURL = sessions[index].audioURL
+                    let diarizationAudioURL = try temporaryReadableAudioURL(for: sessions[index])
+                    defer {
+                        if diarizationAudioURL != storedAudioURL {
+                            try? FileManager.default.removeItem(at: diarizationAudioURL)
+                        }
+                    }
+                    await applyMeetingDiarization(at: index, audioURL: diarizationAudioURL)
+                } catch {
+                    applyMeetingDiarizationFallback(at: index, detail: error.localizedDescription)
+                }
+            }
             if deleteAudioAfterTranscription {
                 deleteAudioFile(for: sessions[index])
                 updateRecordingMetadata(at: index)
@@ -597,6 +717,9 @@ final class TranscriptionStore: ObservableObject {
                 }
                 deleteChunkFiles(for: sessions[updatedIndex])
                 updateFuzzyDictionarySuggestions(for: sessions[updatedIndex])
+                if sessions[updatedIndex].workflow == .meeting {
+                    await applyMeetingDiarization(at: updatedIndex, audioURL: transcriptionAudioURL)
+                }
             }
             if statusMessage.hasPrefix("Transcription complete, but audio encryption failed") == false {
                 let fuzzySuggestionCount = fuzzyDictionarySuggestions(for: sessionID).count

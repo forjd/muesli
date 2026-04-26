@@ -272,6 +272,15 @@ private struct EmptyRecordingView: View {
                 .disabled(store.isBusy)
 
                 Button {
+                    Task { await store.startMeetingRecording() }
+                } label: {
+                    Label("Meeting", systemImage: "person.2.wave.2")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(store.isBusy || store.isRecording)
+
+                Button {
                     store.importAudioFile()
                 } label: {
                     Label("Import", systemImage: "square.and.arrow.down")
@@ -435,6 +444,8 @@ private struct RecordingSummary: View {
 
                 StatusBadge(status: session.status)
 
+                WorkflowBadge(session: session)
+
                 Spacer()
             }
 
@@ -513,6 +524,11 @@ private struct RecordingActionBar: View {
             }
             .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
 
+            Button("Diarize", systemImage: "person.2") {
+                Task { await store.applyMeetingDiarization(sessionID: session.id) }
+            }
+            .disabled(session.status == .transcribing || store.isBusy || store.isRecording || session.segments.isEmpty)
+
             Button("Import", systemImage: "square.and.arrow.down") {
                 store.importAudioFile()
             }
@@ -574,6 +590,11 @@ private struct RecordingActionBar: View {
                 Task { await store.transcribe(sessionID: session.id) }
             }
             .disabled(session.status == .transcribing || store.isBusy || store.isRecording)
+
+            Button("Diarize", systemImage: "person.2") {
+                Task { await store.applyMeetingDiarization(sessionID: session.id) }
+            }
+            .disabled(session.status == .transcribing || store.isBusy || store.isRecording || session.segments.isEmpty)
 
             if store.isRecording, session.status == .recording {
                 Button("Cancel", systemImage: "xmark.circle", role: .destructive) {
@@ -679,6 +700,28 @@ private struct StatusBadge: View {
     }
 }
 
+private struct WorkflowBadge: View {
+    let session: TranscriptSession
+
+    var body: some View {
+        if session.workflow == .meeting {
+            Label(label, systemImage: "person.2")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.indigo)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.indigo.opacity(0.12), in: Capsule())
+        }
+    }
+
+    private var label: String {
+        if let count = session.meetingMetadata?.speakerCount, count > 0 {
+            return "Meeting: \(count) speakers"
+        }
+        return "Meeting"
+    }
+}
+
 private struct TranscriptTextView: View {
     let session: TranscriptSession
     @ObservedObject var store: TranscriptionStore
@@ -688,12 +731,19 @@ private struct TranscriptTextView: View {
             TranscriptBlock(
                 sessionID: session.id,
                 title: "Transcript",
-                text: session.displayTranscript.isEmpty ? "Transcript will appear here after FluidAudio finishes." : session.displayTranscript,
+                text: transcriptText,
                 isPlaceholder: session.displayTranscript.isEmpty,
                 store: store
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var transcriptText: String {
+        guard !session.displayTranscript.isEmpty else {
+            return "Transcript will appear here after FluidAudio finishes."
+        }
+        return TranscriptExporter.exportTranscriptText(for: session)
     }
 }
 

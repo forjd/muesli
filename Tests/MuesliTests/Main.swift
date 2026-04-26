@@ -12,6 +12,8 @@ struct MuesliTestRunner {
         try SecureStorageTests.run()
         try SessionPersistenceTests.run()
         try MuesliCLIContractTests.run()
+        try FluidAudioDiarizerTests.run()
+        try MeetingDiarizationTests.run()
         try TranscriptExporterTests.run()
         try TranscriptSessionFilterTests.run()
         try VoiceActivityChunkRotationTests.run()

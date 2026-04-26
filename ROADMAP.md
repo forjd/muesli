@@ -103,7 +103,7 @@ distribution features that depend on those foundations.
 - [ ] Add a dedicated meeting mode that captures microphone and system audio as
   separate sources, stores their privacy/retention metadata, and keeps dictation
   workflows separate from meeting sessions.
-- [ ] Add meeting transcription primitives on top of meeting mode: VAD-aware
+- [~] Add meeting transcription primitives on top of meeting mode: VAD-aware
   chunking, speaker diarization, speaker-separated transcript formatting, and
   meeting-specific export hooks.
 - [ ] Add meeting notes workflows with built-in and custom templates, explicit
@@ -112,7 +112,7 @@ distribution features that depend on those foundations.
 - [ ] Add optional calendar-aware meeting assistance, including upcoming-meeting
   detection, meeting URL extraction, and clear join-only, record-only, and
   join-and-record actions.
-- [ ] Add speaker diarization for meetings, interviews, and other multi-speaker
+- [~] Add speaker diarization for meetings, interviews, and other multi-speaker
   recordings. Start with anonymous speaker labels and speaker-separated
   formatting, then investigate persistent speaker naming later.
 - [ ] Add configurable automatic actions after transcription, such as copy, paste,

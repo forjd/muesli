@@ -46,6 +46,9 @@
 - Added batch audio import and visible transcript batch export workflows.
 - Added first CLI workflows for file transcription, named dictionary profiles,
   and file-based transcript export.
+- Added the first meeting workflow slice with meeting-tagged recordings,
+  FluidAudio offline speaker diarization for timed live transcript segments,
+  anonymous speaker labels, and speaker-separated exports.
 
 ## [0.2.0](https://github.com/forjd/muesli/compare/v0.1.2...v0.2.0) (2026-04-26)
 

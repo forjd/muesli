@@ -47,6 +47,9 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Clipboard copy templates for plain transcript, Markdown, and notes.
 - Batch import audio files and batch export visible transcripts.
 - JSON CLI contract and file-based CLI transcription/export automation.
+- Meeting recordings with FluidAudio offline speaker diarization, anonymous
+  speaker labels on timed live transcript segments, and speaker-separated text,
+  Markdown, JSON, and SRT exports.
 - Development launcher that creates a stable local signing identity so macOS
   permissions survive rebuilds.
 
@@ -164,7 +167,14 @@ Run the app:
 ```
 
 Use the main window or menu bar item to record, transcribe, export, copy,
-delete, and edit transcripts.
+delete, and edit transcripts. Use the Meeting button for recordings where
+speaker-separated output matters. After transcription, the Diarize action adds
+anonymous speaker labels to timed live transcript segments using FluidAudio's
+offline diarization pipeline, then exports those labels in text, Markdown, JSON,
+and SRT formats. If FluidAudio diarization models are unavailable, Muesli can
+fall back to a local timing-based formatter and marks the diarization metadata as
+unavailable. Speaker labels are anonymous; Muesli does not identify real people
+or persist speaker names.
 
 Use the Files toolbar menu to import one recording, batch import several audio
 files, or export the currently visible transcript list. Imported audio is copied

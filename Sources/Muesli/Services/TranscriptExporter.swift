@@ -4,11 +4,11 @@ struct TranscriptExporter {
     static func data(for session: TranscriptSession, format: TranscriptExportFormat) throws -> Data {
         switch format {
         case .text:
-            return Data(session.displayTranscript.utf8)
+            return Data(exportTranscriptText(for: session).utf8)
         case .markdown:
             return Data(markdownText(for: session).utf8)
         case .docx:
-            return try DOCXWriter.documentData(title: title(for: session), body: session.displayTranscript)
+            return try DOCXWriter.documentData(title: title(for: session), body: exportTranscriptText(for: session))
         case .json:
             let payload = TranscriptExportPayload(
                 id: session.id,
@@ -16,6 +16,7 @@ struct TranscriptExporter {
                 audioPath: session.audioURL.path,
                 model: session.model.rawValue,
                 transcript: session.displayTranscript,
+                speakerTranscript: speakerTranscript(for: session),
                 liveTranscript: session.liveTranscript,
                 finalTranscript: session.finalTranscript,
                 segments: session.segments,
@@ -34,7 +35,7 @@ struct TranscriptExporter {
     static func clipboardText(for session: TranscriptSession, template: TranscriptClipboardTemplate) -> String {
         switch template {
         case .plain:
-            session.displayTranscript
+            exportTranscriptText(for: session)
         case .markdown:
             markdownText(for: session)
         case .notes:
@@ -56,12 +57,14 @@ struct TranscriptExporter {
             "",
             "- Created: \(Self.isoDateFormatter.string(from: session.createdAt))",
             "- Model: \(session.model.label)",
+            "- Workflow: \(session.workflow.label)",
+            speakerCountMetadata(for: session),
             session.duration.map { "- Duration: \(formatDuration($0))" },
             session.fileSize.map { "- Audio size: \(ByteCountFormatter.string(fromByteCount: $0, countStyle: .file))" },
             "",
             "## Transcript",
             "",
-            session.displayTranscript
+            exportTranscriptText(for: session)
         ]
         .compactMap(\.self)
         .joined(separator: "\n")
@@ -80,10 +83,14 @@ struct TranscriptExporter {
             [
                 "\(index + 1)",
                 "\(formatSRTTime(segment.startTime)) --> \(formatSRTTime(max(segment.endTime, segment.startTime + 1)))",
-                segment.text,
+                segment.speakerLabel.map { "\($0): \(segment.text)" } ?? segment.text,
                 ""
             ].joined(separator: "\n")
         }.joined(separator: "\n")
+    }
+
+    static func exportTranscriptText(for session: TranscriptSession) -> String {
+        speakerTranscript(for: session) ?? session.displayTranscript
     }
 
     static func formatSRTTime(_ time: TimeInterval) -> String {
@@ -97,6 +104,25 @@ struct TranscriptExporter {
 
     private static func title(for session: TranscriptSession) -> String {
         "Muesli Transcript \(Self.filenameDateFormatter.string(from: session.createdAt))"
+    }
+
+    private static func speakerTranscript(for session: TranscriptSession) -> String? {
+        guard session.workflow == .meeting,
+              session.segments.contains(where: { $0.speakerLabel != nil }) else {
+            return nil
+        }
+        let transcript = MeetingDiarizationEngine.speakerFormattedTranscript(for: session)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return transcript.isEmpty ? nil : transcript
+    }
+
+    private static func speakerCountMetadata(for session: TranscriptSession) -> String? {
+        guard session.workflow == .meeting,
+              let count = session.meetingMetadata?.speakerCount,
+              count > 0 else {
+            return nil
+        }
+        return "- Speakers: \(count)"
     }
 
     private static func formatDuration(_ duration: TimeInterval) -> String {
@@ -129,6 +155,7 @@ private struct TranscriptExportPayload: Encodable {
     let audioPath: String
     let model: String
     let transcript: String
+    let speakerTranscript: String?
     let liveTranscript: String
     let finalTranscript: String
     let segments: [TranscriptSegment]
