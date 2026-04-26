@@ -39,6 +39,8 @@ private struct RecorderHeaderView: View {
 
                 Spacer()
 
+                PrivacyModeBadge(mode: store.privacyMode)
+
                 ModelLoadBadge(state: store.modelLoadState)
 
                 TranscriberHealthMenu(store: store)
@@ -76,6 +78,25 @@ private struct RecorderHeaderView: View {
     private func formatElapsed(_ elapsed: TimeInterval) -> String {
         let totalSeconds = max(0, Int(elapsed.rounded(.down)))
         return String(format: "%02d:%02d", totalSeconds / 60, totalSeconds % 60)
+    }
+}
+
+private struct PrivacyModeBadge: View {
+    let mode: PrivacyMode
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: mode.contentLeavesDevice ? "network" : "lock.shield.fill")
+                .foregroundStyle(mode.contentLeavesDevice ? .orange : .green)
+
+            Text(mode.shortLabel)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 6)
+        .background(.thinMaterial, in: Capsule())
+        .help(mode.detail)
     }
 }
 

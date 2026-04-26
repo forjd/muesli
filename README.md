@@ -17,6 +17,7 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Model picker for Parakeet TDT 0.6B v3 and v2.
 - Live recording view with level meter and stabilized partial transcript.
 - Saved recording history with transcript editing.
+- Encrypted local transcript metadata and stored recording files.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
@@ -74,6 +75,34 @@ For Accessibility, add this app bundle:
 The development launcher signs the app with a local project-specific signing
 identity. If you previously granted Accessibility to an older build, remove it
 from System Settings and add the current `dist/Muesli.app` once.
+
+## Privacy Model
+
+Muesli shows a privacy mode in the main window, menu bar, Settings, and readiness
+check so it is clear when speech content is local and when future optional
+features may use external services.
+
+- **Local-only dictation**: the current mode. Audio recordings, live transcript
+  chunks, final transcripts, and transcript metadata stay on this Mac. Network
+  access may be used to download FluidAudio/Parakeet model files before local
+  transcription, but recorded speech and transcript text are not sent to a
+  remote transcription or post-processing service.
+- **Local AI post-processing**: planned mode for optional local providers such as
+  Ollama. Audio and transcripts stay on this Mac while a local provider rewrites,
+  formats, or summarizes transcript text.
+- **Remote post-processing**: planned opt-in mode for remote providers. Transcript
+  text may leave this Mac for the selected provider, and provider use should be
+  explicit per workflow.
+
+Local files are stored under `~/Library/Application Support/Muesli/`. Session
+metadata is saved in encrypted form in `sessions.json`; plaintext legacy session
+metadata is migrated to encrypted storage on load. Audio recordings and live
+chunk files are saved under `Recordings/` while recording and transcribing.
+Stored recording files are encrypted after successful transcription unless the
+recording is deleted by the "Delete raw audio after transcription" setting. Live
+chunk files are deleted after transcription. The local storage encryption key is
+generated per install and stored in Keychain. The recordings folder is visible
+in Settings and can be opened from the app.
 
 ## Usage
 

@@ -13,6 +13,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
     var duration: TimeInterval?
     var fileSize: Int64?
     var errorMessage: String?
+    var isAudioEncrypted: Bool
 
     init(
         id: UUID = UUID(),
@@ -26,7 +27,8 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         segments: [TranscriptSegment] = [],
         duration: TimeInterval? = nil,
         fileSize: Int64? = nil,
-        errorMessage: String? = nil
+        errorMessage: String? = nil,
+        isAudioEncrypted: Bool = false
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -40,6 +42,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         self.duration = duration
         self.fileSize = fileSize
         self.errorMessage = errorMessage
+        self.isAudioEncrypted = isAudioEncrypted
     }
 
     var displayTranscript: String {
@@ -65,6 +68,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         case duration
         case fileSize
         case errorMessage
+        case isAudioEncrypted
     }
 
     init(from decoder: Decoder) throws {
@@ -81,6 +85,7 @@ struct TranscriptSession: Identifiable, Hashable, Codable {
         duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration)
         fileSize = try container.decodeIfPresent(Int64.self, forKey: .fileSize)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage)
+        isAudioEncrypted = try container.decodeIfPresent(Bool.self, forKey: .isAudioEncrypted) ?? false
     }
 }
 

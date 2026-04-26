@@ -51,6 +51,32 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Privacy") {
+                LabeledContent("Current mode") {
+                    Label(store.privacyMode.label, systemImage: store.privacyMode.contentLeavesDevice ? "network" : "lock.shield")
+                        .foregroundStyle(store.privacyMode.contentLeavesDevice ? .orange : .secondary)
+                }
+
+                LabeledContent("Content leaves this Mac") {
+                    Text(store.privacyMode.contentLeavesDevice ? "Yes" : "No")
+                        .foregroundStyle(store.privacyMode.contentLeavesDevice ? .orange : .secondary)
+                }
+
+                LabeledContent("Network use") {
+                    Text(store.privacyMode.networkUse)
+                        .foregroundStyle(.secondary)
+                }
+
+                LabeledContent("Local storage encryption") {
+                    Text("On; key stored in Keychain")
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(store.privacyMode.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Storage") {
                 LabeledContent("Recordings folder") {
                     HStack {

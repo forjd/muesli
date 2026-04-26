@@ -63,6 +63,17 @@ struct ReadinessCheckView: View {
                 } secondaryAction: {}
 
                 ReadinessRow(
+                    title: store.privacyMode.label,
+                    detail: store.privacyMode.detail,
+                    systemImage: store.privacyMode.contentLeavesDevice ? "network" : "lock.shield",
+                    state: .ready(store.privacyMode.contentLeavesDevice ? "Remote" : "Local"),
+                    primaryTitle: nil,
+                    primarySystemImage: nil,
+                    secondaryTitle: nil,
+                    secondarySystemImage: nil
+                ) {} secondaryAction: {}
+
+                ReadinessRow(
                     title: "Dictation Hotkey",
                     detail: "\(store.dictationHotKey.label) · \(store.dictationHotKeyMode.label)",
                     systemImage: "keyboard",

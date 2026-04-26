@@ -64,10 +64,12 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(dictationHotKeyMode.rawValue, forKey: PreferenceKey.dictationHotKeyMode)
         }
     }
+    @Published private(set) var privacyMode: PrivacyMode = .localOnlyDictation
 
     private let recorder = AudioRecorder()
     private let transcriber = ParakeetTranscriber()
     private let persistence = SessionPersistence()
+    private let secureStorage = SecureStorage()
     private var activeRecordingURL: URL?
     private var activeSessionID: TranscriptSession.ID?
     private var meterTask: Task<Void, Never>?
@@ -264,7 +266,6 @@ final class TranscriptionStore: ObservableObject {
         statusMessage = "Transcribing with \(selectedModel.label)..."
         scheduleSave()
 
-        let audioURL = sessions[index].audioURL
         let model = selectedModel
 
         if let duration = sessions[index].duration,
@@ -276,7 +277,10 @@ final class TranscriptionStore: ObservableObject {
             if deleteAudioAfterTranscription {
                 deleteAudioFile(for: sessions[index])
                 updateRecordingMetadata(at: index)
+            } else {
+                encryptAudioFileIfNeeded(at: index)
             }
+            deleteChunkFiles(for: sessions[index])
             statusMessage = "Skipped final pass for long recording; using live transcript."
             isBusy = false
             scheduleSave()
@@ -284,7 +288,15 @@ final class TranscriptionStore: ObservableObject {
         }
 
         do {
-            let result = try await transcriber.transcribe(audioURL: audioURL, model: model)
+            let storedAudioURL = sessions[index].audioURL
+            let transcriptionAudioURL = try temporaryReadableAudioURL(for: sessions[index])
+            defer {
+                if transcriptionAudioURL != storedAudioURL {
+                    try? FileManager.default.removeItem(at: transcriptionAudioURL)
+                }
+            }
+
+            let result = try await transcriber.transcribe(audioURL: transcriptionAudioURL, model: model)
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                 sessions[updatedIndex].status = .complete
                 let trimmed = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -297,9 +309,14 @@ final class TranscriptionStore: ObservableObject {
                 if deleteAudioAfterTranscription {
                     deleteAudioFile(for: sessions[updatedIndex])
                     updateRecordingMetadata(at: updatedIndex)
+                } else {
+                    encryptAudioFileIfNeeded(at: updatedIndex)
                 }
+                deleteChunkFiles(for: sessions[updatedIndex])
             }
-            statusMessage = "Transcription complete."
+            if statusMessage.hasPrefix("Transcription complete, but audio encryption failed") == false {
+                statusMessage = "Transcription complete."
+            }
         } catch {
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                 sessions[updatedIndex].status = .failed
@@ -339,7 +356,9 @@ final class TranscriptionStore: ObservableObject {
 
     private func updateRecordingMetadata(at index: Int) {
         let url = sessions[index].audioURL
-        if let audioFile = try? AVAudioFile(forReading: url), audioFile.processingFormat.sampleRate > 0 {
+        if !sessions[index].isAudioEncrypted,
+           let audioFile = try? AVAudioFile(forReading: url),
+           audioFile.processingFormat.sampleRate > 0 {
             sessions[index].duration = Double(audioFile.length) / audioFile.processingFormat.sampleRate
         }
 
@@ -878,9 +897,12 @@ final class TranscriptionStore: ObservableObject {
     }
 
     private func deleteFiles(for session: TranscriptSession) {
-        let fileManager = FileManager.default
         deleteAudioFile(for: session)
+        deleteChunkFiles(for: session)
+    }
 
+    private func deleteChunkFiles(for session: TranscriptSession) {
+        let fileManager = FileManager.default
         let chunkDirectory = session.audioURL
             .deletingLastPathComponent()
             .appending(path: "Chunks", directoryHint: .isDirectory)
@@ -890,6 +912,26 @@ final class TranscriptionStore: ObservableObject {
 
     private func deleteAudioFile(for session: TranscriptSession) {
         try? FileManager.default.removeItem(at: session.audioURL)
+    }
+
+    private func temporaryReadableAudioURL(for session: TranscriptSession) throws -> URL {
+        guard session.isAudioEncrypted else {
+            return session.audioURL
+        }
+        return try secureStorage.decryptedTemporaryFile(from: session.audioURL)
+    }
+
+    private func encryptAudioFileIfNeeded(at index: Int) {
+        guard !sessions[index].isAudioEncrypted else { return }
+
+        do {
+            try secureStorage.encryptFile(at: sessions[index].audioURL)
+            sessions[index].isAudioEncrypted = true
+            updateRecordingMetadata(at: index)
+        } catch {
+            sessions[index].errorMessage = error.localizedDescription
+            statusMessage = "Transcription complete, but audio encryption failed: \(error.localizedDescription)"
+        }
     }
 
     private func exportFilename(for session: TranscriptSession, format: TranscriptExportFormat) -> String {

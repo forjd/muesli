@@ -83,6 +83,11 @@ struct MenuBarView: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
 
+            Label(store.privacyMode.label, systemImage: store.privacyMode.contentLeavesDevice ? "network" : "lock.shield")
+                .font(.caption)
+                .foregroundStyle(store.privacyMode.contentLeavesDevice ? .orange : .secondary)
+                .help(store.privacyMode.detail)
+
             if store.isRecording {
                 HStack(spacing: 8) {
                     ProgressView()

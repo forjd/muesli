@@ -5,10 +5,16 @@ struct SessionPersistence {
     private let appSupportDirectoryOverride: URL?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let secureStorage: SecureStorage
 
-    init(fileManager: FileManager = .default, appSupportDirectory: URL? = nil) {
+    init(
+        fileManager: FileManager = .default,
+        appSupportDirectory: URL? = nil,
+        secureStorage: SecureStorage = SecureStorage()
+    ) {
         self.fileManager = fileManager
         self.appSupportDirectoryOverride = appSupportDirectory
+        self.secureStorage = secureStorage
         self.encoder = JSONEncoder()
         self.decoder = JSONDecoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -33,12 +39,14 @@ struct SessionPersistence {
     }
 
     func load() -> [TranscriptSession] {
-        guard let data = try? Data(contentsOf: sessionsURL) else {
+        guard let storedData = try? Data(contentsOf: sessionsURL) else {
             return []
         }
 
         do {
-            return try decoder.decode([TranscriptSession].self, from: data).map { session in
+            let wasPlaintext = !secureStorage.isEncrypted(storedData)
+            let data = try secureStorage.decrypt(storedData)
+            let sessions = try decoder.decode([TranscriptSession].self, from: data).map { session in
                 var session = session
                 if session.status == .transcribing || session.status == .recording || session.status == .finalizing {
                     session.status = .recorded
@@ -46,6 +54,12 @@ struct SessionPersistence {
                 }
                 return session
             }
+
+            if wasPlaintext {
+                try? save(sessions)
+            }
+
+            return sessions
         } catch {
             return []
         }
@@ -54,6 +68,6 @@ struct SessionPersistence {
     func save(_ sessions: [TranscriptSession]) throws {
         try fileManager.createDirectory(at: appSupportDirectory, withIntermediateDirectories: true)
         let data = try encoder.encode(sessions)
-        try data.write(to: sessionsURL, options: [.atomic])
+        try secureStorage.encrypt(data).write(to: sessionsURL, options: [.atomic])
     }
 }

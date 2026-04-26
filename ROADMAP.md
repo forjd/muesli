@@ -10,11 +10,11 @@ distribution features that depend on those foundations.
 
 ## 1. Privacy, Storage, and Data Model Foundations
 
-- [ ] Define a clear privacy model with visible states for local-only dictation,
+- [x] Define a clear privacy model with visible states for local-only dictation,
   local transcription with local AI post-processing, and remote post-processing.
-- [ ] Document what data stays local, what can leave the machine when optional
+- [x] Document what data stays local, what can leave the machine when optional
   integrations are enabled, and where local files are stored.
-- [ ] Encrypt local storage for recordings, transcripts, transcript metadata, and
+- [x] Encrypt local storage for recordings, transcripts, transcript metadata, and
   settings that may contain sensitive text. Store provider API keys separately
   in Keychain.
 - [ ] Add retention controls for automatically deleting recordings, transcripts, or

@@ -1,16 +1,19 @@
 import Foundation
+import CryptoKit
 
 struct SessionPersistenceTests {
     static func run() throws {
         try testSaveAndLoadSessions()
         try testInterruptedSessionsLoadAsRecorded()
+        try testSaveEncryptsSessionMetadata()
+        try testPlaintextSessionsAreMigratedToEncryptedStorage()
     }
 
     private static func testSaveAndLoadSessions() throws {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let persistence = SessionPersistence(appSupportDirectory: directory)
+        let persistence = SessionPersistence(appSupportDirectory: directory, secureStorage: testSecureStorage())
         let session = TranscriptSession(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
             createdAt: Date(timeIntervalSince1970: 1_234),
@@ -32,7 +35,7 @@ struct SessionPersistenceTests {
         let directory = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
 
-        let persistence = SessionPersistence(appSupportDirectory: directory)
+        let persistence = SessionPersistence(appSupportDirectory: directory, secureStorage: testSecureStorage())
         let session = TranscriptSession(
             audioURL: directory.appending(path: "interrupted.wav"),
             model: .v2,
@@ -51,10 +54,68 @@ struct SessionPersistenceTests {
         try expectEqual(loaded.transcript, "partial")
     }
 
+    private static func testSaveEncryptsSessionMetadata() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let secureStorage = testSecureStorage()
+        let persistence = SessionPersistence(appSupportDirectory: directory, secureStorage: secureStorage)
+        let session = TranscriptSession(
+            createdAt: Date(timeIntervalSince1970: 2_000),
+            audioURL: directory.appending(path: "private.wav"),
+            model: .v3,
+            status: .complete,
+            transcript: "sensitive transcript"
+        )
+
+        try persistence.save([session])
+
+        let storedData = try Data(contentsOf: persistence.sessionsURL)
+        try expect(secureStorage.isEncrypted(storedData), "Expected sessions.json to be encrypted")
+        try expect(!String(decoding: storedData, as: UTF8.self).contains("sensitive transcript"), "Expected transcript text not to appear in stored data")
+        try expectEqual(persistence.load(), [session])
+    }
+
+    private static func testPlaintextSessionsAreMigratedToEncryptedStorage() throws {
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let secureStorage = testSecureStorage()
+        let persistence = SessionPersistence(appSupportDirectory: directory, secureStorage: secureStorage)
+        let session = TranscriptSession(
+            createdAt: Date(timeIntervalSince1970: 3_000),
+            audioURL: directory.appending(path: "legacy.wav"),
+            model: .v2,
+            status: .complete,
+            transcript: "legacy transcript"
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try encoder.encode([session]).write(to: persistence.sessionsURL, options: [.atomic])
+
+        let loaded = persistence.load()
+        let migratedData = try Data(contentsOf: persistence.sessionsURL)
+
+        try expectEqual(loaded, [session])
+        try expect(secureStorage.isEncrypted(migratedData), "Expected plaintext sessions.json to be migrated to encrypted storage")
+    }
+
     private static func makeTemporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "MuesliTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private static func testSecureStorage() -> SecureStorage {
+        SecureStorage(keyProvider: FixedStorageKeyProvider())
+    }
+}
+
+struct FixedStorageKeyProvider: SecureStorageKeyProvider {
+    func storageKey() throws -> SymmetricKey {
+        SymmetricKey(data: Data(repeating: 7, count: 32))
     }
 }
