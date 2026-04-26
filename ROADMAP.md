@@ -37,7 +37,7 @@ distribution features that depend on those foundations.
   fails, or pastes into another app.
 - [x] Add optional sound effects for recording start, stop, cancellation, and
   failure states.
-- [ ] Add configurable recording modes for toggle, push-to-talk, and one-shot
+- [x] Add configurable recording modes for toggle, push-to-talk, and one-shot
   dictation workflows.
 - [ ] Add a lightweight screen overlay while recording, including elapsed time,
   audio level, active mode, privacy state, and clear stop/cancel affordances.

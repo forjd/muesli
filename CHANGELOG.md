@@ -18,6 +18,8 @@
   recording, transcription, failures, and paste completion.
 - Added optional sound effects for recording start, stop, cancellation, failure,
   and paste feedback.
+- Documented configurable dictation modes for toggle, push-to-talk, and hybrid
+  workflows.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 

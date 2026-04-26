@@ -29,6 +29,7 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Optional sound effects for dictation start, stop, cancellation, failure, and
   paste feedback.
 - One-shot global dictation using `Command-Shift-D`.
+- Configurable dictation behavior for toggle, push-to-talk, and hybrid workflows.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.
 - Development launcher that creates a stable local signing identity so macOS
@@ -154,6 +155,11 @@ Use global dictation:
 2. Press `Command-Shift-D` to start recording.
 3. Speak.
 4. Press `Command-Shift-D` again to stop, transcribe, and paste.
+
+In Settings, the dictation hotkey behavior can be changed between Toggle,
+Push-to-Talk, and Hybrid. Toggle starts and stops with separate key presses,
+Push-to-Talk records only while the shortcut is held, and Hybrid supports either
+a tap-to-toggle or hold-to-talk flow.
 
 ## Development
 
