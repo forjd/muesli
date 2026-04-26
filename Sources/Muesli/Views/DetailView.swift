@@ -681,7 +681,7 @@ private struct LiveChunkStatsView: View {
     }
 }
 
-private struct AudioLevelMeter: View {
+struct AudioLevelMeter: View {
     let level: Float
 
     private var normalized: Double {

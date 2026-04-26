@@ -28,6 +28,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
   Muesli is in the background.
 - Optional sound effects for dictation start, stop, cancellation, failure, and
   paste feedback.
+- Floating recording overlay with elapsed time, audio level, mode, privacy
+  state, stop, and cancel controls.
 - One-shot global dictation using `Command-Shift-D`.
 - Configurable dictation behavior for toggle, push-to-talk, and hybrid workflows.
 - Menu bar controls for dictation, recording, model selection, and settings.

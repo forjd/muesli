@@ -39,7 +39,7 @@ distribution features that depend on those foundations.
   failure states.
 - [x] Add configurable recording modes for toggle, push-to-talk, and one-shot
   dictation workflows.
-- [ ] Add a lightweight screen overlay while recording, including elapsed time,
+- [x] Add a lightweight screen overlay while recording, including elapsed time,
   audio level, active mode, privacy state, and clear stop/cancel affordances.
   Decide whether it should appear above full-screen apps.
 

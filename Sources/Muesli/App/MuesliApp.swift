@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isHotKeyDown = false
     private var hybridHoldTask: Task<Void, Never>?
     private var hybridHoldDidEngage = false
+    private let recordingOverlay = RecordingOverlayController()
     private let hybridHoldThreshold: Duration = .milliseconds(350)
     private let dictationHotKeyID = EventHotKeyID(signature: OSType("MUSL".fourCharCode), id: 1)
 
@@ -75,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func configure(store: TranscriptionStore) {
         self.store = store
+        recordingOverlay.configure(store: store)
         registerGlobalHotKey(store.dictationHotKey)
         hotKeyCancellable = store.$dictationHotKey
             .dropFirst()
