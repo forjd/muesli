@@ -122,17 +122,22 @@ distribution features that depend on those foundations.
 
 ## 7. Distribution and Operations
 
-- [ ] Keep CI focused on build health, logic tests, packaging, and release artifact
-  integrity.
-- [ ] Add a model management view for cached and available models, including
+- [x] Add notarization support for release builds, including Apple Developer
+  certificate/keychain setup in CI, notarization submission, stapling, Gatekeeper
+  verification, and release documentation for required secrets.
+- [x] Add a model management view for cached and available models, including
   background download, delete, selected-model switching, cache size, offline-mode
-  compatibility, and download failure recovery.
-- [ ] Improve first-run onboarding for permissions, model download, offline mode,
-  and global hotkey setup.
+  compatibility, download failure recovery, and separate status for ASR,
+  diarization, and vocabulary-boosting model assets.
+- [x] Improve first-run onboarding for permissions, model download, offline mode,
+  and global hotkey setup. Reuse the readiness check where possible, but make the
+  first-run flow guided enough that users can finish setup without opening
+  Settings manually.
 - [ ] Add a live dictation test to onboarding that verifies the full record,
   transcribe, copy/paste, permission, hotkey, and selected-model pipeline before
   marking setup complete.
-- [ ] Add notarization support for release builds.
+- [ ] Keep CI focused on build health, logic tests, packaging, and release artifact
+  integrity.
 - [?] Add automatic updates for installed release builds. Evaluate Sparkle against
   GitHub Releases-based updating, including stable and beta channel support.
 - [ ] Add crash/error reporting that is local-first by default and opt-in for any

@@ -79,8 +79,9 @@ reuse the cached build and model files.
 
 ## Installing Release Builds
 
-Release archives are signed but not notarized yet. If macOS blocks a downloaded
-release build, remove the quarantine attribute after unzipping it:
+Release archives can be signed and notarized when Apple Developer credentials
+are configured for the release workflow. If macOS blocks a downloaded
+non-notarized build, remove the quarantine attribute after unzipping it:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Muesli.app
@@ -303,11 +304,19 @@ Create a release app bundle and zip archive:
 The script writes artifacts to `dist/release/`, verifies the app signature, and
 generates release notes. Set `MUESLI_VERSION` to override the default release
 version, and set `MUESLI_CODESIGN_IDENTITY` to sign with a distribution identity.
+Set `MUESLI_NOTARIZE=true` with `MUESLI_APPLE_ID`, `MUESLI_APPLE_TEAM_ID`, and
+`MUESLI_APPLE_APP_SPECIFIC_PASSWORD` to submit the release archive to Apple,
+staple the notarization ticket, and verify the stapled app with Gatekeeper.
 
 In GitHub Actions, archives use ad-hoc signing unless
-`MUESLI_CODESIGN_IDENTITY` is configured. Local builds without
-`MUESLI_CODESIGN_IDENTITY` use Muesli's local development identity. Archives are
-not notarized yet.
+`MUESLI_CODESIGN_IDENTITY` is configured. Configure
+`MUESLI_DEVELOPER_ID_CERTIFICATE_BASE64`,
+`MUESLI_DEVELOPER_ID_CERTIFICATE_PASSWORD`,
+`MUESLI_DEVELOPER_ID_KEYCHAIN_PASSWORD`, `MUESLI_CODESIGN_IDENTITY`,
+`MUESLI_APPLE_ID`, `MUESLI_APPLE_TEAM_ID`, and
+`MUESLI_APPLE_APP_SPECIFIC_PASSWORD` to produce notarized release artifacts.
+Local builds without `MUESLI_CODESIGN_IDENTITY` use Muesli's local development
+identity.
 
 ## GitHub Releases
 
@@ -336,6 +345,11 @@ and loading cached files.
 If you switch models, the new model may need to download once. After that,
 transcription should warm from the local cache.
 
+Use Settings > Models to review cached ASR, speaker diarization, live
+diarization, and vocabulary-boosting assets. The model view shows local cache
+size, offline-mode compatibility, download actions for directly managed models,
+and delete actions for clearing cached files.
+
 ## Project Structure
 
 ```text
@@ -354,6 +368,6 @@ script/package_release.sh        Release app bundle and zip archive helper
 ## Notes
 
 Muesli is currently a developer-oriented macOS app. Release archives can be
-created locally, but they are not notarized unless you provide your own Apple
-Developer signing and notarization workflow. The local scripts create
-development signing material under `.dev-certs/`, which is ignored by Git.
+created locally, and notarization is available when Developer ID signing and
+Apple notary credentials are provided. The local scripts create development
+signing material under `.dev-certs/`, which is ignored by Git.

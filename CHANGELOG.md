@@ -56,6 +56,12 @@
   meeting recordings, and built-in Markdown meeting notes templates.
 - Added live LS-EEND speaker diarization during meeting recording and PDF export
   for built-in meeting notes templates.
+- Added optional Apple notarization support for release packaging and GitHub
+  release builds.
+- Added a Settings model-management view for ASR, diarization, live diarization,
+  and vocabulary-boosting model cache status, size, downloads, and deletion.
+- Improved first-run setup with inline model, offline mode, and hotkey controls
+  in the readiness check.
 
 ## [0.2.0](https://github.com/forjd/muesli/compare/v0.1.2...v0.2.0) (2026-04-26)
 

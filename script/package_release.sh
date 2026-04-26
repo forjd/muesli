@@ -18,6 +18,7 @@ APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_FILE="$ROOT_DIR/Resources/Muesli.icns"
 ARCHIVE_PATH="$RELEASE_DIR/$APP_NAME-$VERSION-macOS.zip"
+NOTARIZATION_ARCHIVE_PATH="$RELEASE_DIR/$APP_NAME-$VERSION-notarization.zip"
 NOTES_PATH="$RELEASE_DIR/$APP_NAME-$VERSION-release-notes.md"
 
 DEV_CERT_DIR="$ROOT_DIR/.dev-certs"
@@ -116,7 +117,7 @@ PLIST
 
 sign_bundle() {
   if [[ -n "${MUESLI_CODESIGN_IDENTITY:-}" ]]; then
-    /usr/bin/codesign --force --deep --options runtime --sign "$MUESLI_CODESIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
+    /usr/bin/codesign --force --deep --options runtime --timestamp --sign "$MUESLI_CODESIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
   elif [[ "${CI:-}" == "true" ]]; then
     /usr/bin/codesign --force --deep --options runtime --sign - "$APP_BUNDLE" >/dev/null
   else
@@ -125,7 +126,36 @@ sign_bundle() {
   fi
 }
 
+notarize_bundle_if_requested() {
+  if [[ "${MUESLI_NOTARIZE:-false}" != "true" ]]; then
+    return
+  fi
+
+  if [[ -z "${MUESLI_APPLE_ID:-}" || -z "${MUESLI_APPLE_TEAM_ID:-}" || -z "${MUESLI_APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+    echo "MUESLI_NOTARIZE=true requires MUESLI_APPLE_ID, MUESLI_APPLE_TEAM_ID, and MUESLI_APPLE_APP_SPECIFIC_PASSWORD." >&2
+    exit 2
+  fi
+
+  /usr/bin/ditto -c -k --keepParent --sequesterRsrc "$APP_BUNDLE" "$NOTARIZATION_ARCHIVE_PATH"
+  xcrun notarytool submit "$NOTARIZATION_ARCHIVE_PATH" \
+    --apple-id "$MUESLI_APPLE_ID" \
+    --team-id "$MUESLI_APPLE_TEAM_ID" \
+    --password "$MUESLI_APPLE_APP_SPECIFIC_PASSWORD" \
+    --wait
+  xcrun stapler staple "$APP_BUNDLE"
+  xcrun stapler validate "$APP_BUNDLE"
+  spctl -a -vvv -t exec "$APP_BUNDLE"
+  rm -f "$NOTARIZATION_ARCHIVE_PATH"
+}
+
 write_release_notes() {
+  local signing_note
+  if [[ "${MUESLI_NOTARIZE:-false}" == "true" ]]; then
+    signing_note="This archive is signed with a Developer ID certificate and notarized by Apple."
+  else
+    signing_note="This archive is signed. CI builds use ad-hoc signing unless \`MUESLI_CODESIGN_IDENTITY\` is set. Local builds without \`MUESLI_CODESIGN_IDENTITY\` use the project-local development signing identity. This archive is not notarized."
+  fi
+
   cat >"$NOTES_PATH" <<EOF
 # Muesli $VERSION
 
@@ -150,10 +180,7 @@ dictation into the app you were using.
 
 ## Signing
 
-This archive is signed. CI builds use ad-hoc signing unless
-\`MUESLI_CODESIGN_IDENTITY\` is set. Local builds without
-\`MUESLI_CODESIGN_IDENTITY\` use the project-local development signing identity.
-This archive is not notarized.
+$signing_note
 EOF
 }
 
@@ -175,6 +202,7 @@ write_info_plist
 sign_bundle
 
 /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+notarize_bundle_if_requested
 /usr/bin/ditto -c -k --keepParent --sequesterRsrc "$APP_BUNDLE" "$ARCHIVE_PATH"
 write_release_notes
 

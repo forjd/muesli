@@ -89,7 +89,46 @@ jobs:
       - name: Run tests
         run: swift run MuesliTests
 
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MUESLI_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MUESLI_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MUESLI_DEVELOPER_ID_KEYCHAIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$CERTIFICATE_BASE64" ]]; then
+            echo "No Developer ID certificate secret configured; release will use fallback signing."
+            exit 0
+          fi
+
+          keychain="$RUNNER_TEMP/muesli-signing.keychain-db"
+          certificate="$RUNNER_TEMP/muesli-developer-id.p12"
+
+          echo "$CERTIFICATE_BASE64" | base64 --decode > "$certificate"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security import "$certificate" \
+            -P "$CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain"
+
       - name: Package release
+        env:
+          MUESLI_CODESIGN_IDENTITY: ${{ secrets.MUESLI_CODESIGN_IDENTITY }}
+          MUESLI_NOTARIZE: ${{ secrets.MUESLI_CODESIGN_IDENTITY != '' && secrets.MUESLI_APPLE_ID != '' && secrets.MUESLI_APPLE_TEAM_ID != '' && secrets.MUESLI_APPLE_APP_SPECIFIC_PASSWORD != '' && 'true' || 'false' }}
+          MUESLI_APPLE_ID: ${{ secrets.MUESLI_APPLE_ID }}
+          MUESLI_APPLE_TEAM_ID: ${{ secrets.MUESLI_APPLE_TEAM_ID }}
+          MUESLI_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.MUESLI_APPLE_APP_SPECIFIC_PASSWORD }}
         run: ./script/package_release.sh
 
       - name: Check archive digest

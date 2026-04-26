@@ -60,7 +60,8 @@ struct ReadinessCheckView: View {
                     secondarySystemImage: nil
                 ) {
                     if case .downloadRequired = store.modelLoadState {
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                        store.offlineMode = false
+                        Task { await store.prepareTranscriber() }
                     } else {
                         Task { await store.prepareTranscriber() }
                     }
@@ -77,7 +78,8 @@ struct ReadinessCheckView: View {
                     secondarySystemImage: nil
                 ) {
                     if case .downloadRequired = store.diarizationModelLoadState {
-                        NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                        store.offlineMode = false
+                        Task { await store.prepareDiarizer() }
                     } else {
                         Task { await store.prepareDiarizer() }
                     }
@@ -106,6 +108,10 @@ struct ReadinessCheckView: View {
                 ) {
                     NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
                 } secondaryAction: {}
+            }
+
+            if isFirstRun {
+                firstRunSetup
             }
 
             Divider()
@@ -138,12 +144,57 @@ struct ReadinessCheckView: View {
                 .font(.system(size: 36, weight: .semibold))
                 .foregroundStyle(needsAttention ? .blue : .green)
 
-            Text("Ready Check")
+            Text(isFirstRun ? "Set Up Muesli" : "Ready Check")
                 .font(.system(.title, design: .rounded, weight: .semibold))
 
-            Text("Confirm Muesli can record audio, load the local model, and paste dictation with the configured hotkey.")
+            Text(isFirstRun ? "Grant permissions, choose local models, and confirm dictation behavior before using the app." : "Confirm Muesli can record audio, load the local model, and paste dictation with the configured hotkey.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var firstRunSetup: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider()
+
+            Text("Setup")
+                .font(.headline)
+
+            Picker("Default model", selection: $store.selectedModel) {
+                ForEach(ParakeetModel.allCases) { model in
+                    Text(model.label).tag(model)
+                }
+            }
+            .disabled(store.isWarmingModel)
+
+            Toggle("Offline mode after models are cached", isOn: $store.offlineMode)
+
+            Picker("Hotkey behavior", selection: $store.dictationHotKeyMode) {
+                ForEach(DictationHotKeyMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+
+            Picker("Hotkey", selection: $store.dictationHotKey) {
+                ForEach(DictationHotKey.presets) { hotKey in
+                    Text(hotKey.label).tag(hotKey)
+                }
+            }
+
+            HStack {
+                Button("Prepare Selected Model", systemImage: "arrow.down.circle") {
+                    Task { await store.prepareTranscriber() }
+                }
+                .disabled(store.isWarmingModel || store.modelLoadState.isReady)
+
+                Button("Manage Models", systemImage: "cpu") {
+                    NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
+            }
+
+            Text("Model downloads happen once. After the selected model is cached, offline mode can stay on for local-only dictation.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -173,7 +224,7 @@ struct ReadinessCheckView: View {
         case .loadingCached, .downloading:
             "Loading"
         case .downloadRequired:
-            "Settings"
+            store.offlineMode ? "Allow Download" : "Download"
         case .failed:
             "Retry"
         case .idle:
@@ -188,7 +239,7 @@ struct ReadinessCheckView: View {
         case .loadingCached, .downloading:
             "hourglass"
         case .downloadRequired:
-            "gearshape"
+            "arrow.down.circle"
         case .failed:
             "arrow.clockwise"
         case .idle:
@@ -218,7 +269,7 @@ struct ReadinessCheckView: View {
         case .loadingCached, .downloading:
             "Loading"
         case .downloadRequired:
-            "Settings"
+            store.offlineMode ? "Allow Download" : "Download"
         case .failed:
             "Retry"
         case .idle:
@@ -233,7 +284,7 @@ struct ReadinessCheckView: View {
         case .loadingCached, .downloading:
             "hourglass"
         case .downloadRequired:
-            "gearshape"
+            "arrow.down.circle"
         case .failed:
             "arrow.clockwise"
         case .idle:

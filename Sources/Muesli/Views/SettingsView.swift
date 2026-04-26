@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var replacementReplace = ""
     @State private var dictionaryTerm = ""
     @State private var dictionaryProfileName = ""
+    @State private var modelAssetPendingDeletion: ModelAssetState?
 
     var body: some View {
         TabView {
@@ -18,6 +19,13 @@ struct SettingsView: View {
             }
             .tabItem {
                 Label("General", systemImage: "slider.horizontal.3")
+            }
+
+            SettingsTabContainer {
+                modelManagementSettings
+            }
+            .tabItem {
+                Label("Models", systemImage: "cpu")
             }
 
             SettingsTabContainer {
@@ -65,6 +73,24 @@ struct SettingsView: View {
         } message: {
             Text("This removes every saved recording, transcript, and live chunk from Muesli. This cannot be undone.")
         }
+        .confirmationDialog(
+            "Delete cached model files?",
+            isPresented: Binding(
+                get: { modelAssetPendingDeletion != nil },
+                set: { if !$0 { modelAssetPendingDeletion = nil } }
+            ),
+            presenting: modelAssetPendingDeletion
+        ) { asset in
+            Button("Delete \(asset.title)", role: .destructive) {
+                store.deleteModelAsset(asset)
+                modelAssetPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                modelAssetPendingDeletion = nil
+            }
+        } message: { asset in
+            Text("This removes \(asset.cacheSizeLabel) from the local FluidAudio model cache. Muesli can download it again while offline mode is off.")
+        }
     }
 
     private var modelSettings: some View {
@@ -101,6 +127,92 @@ struct SettingsView: View {
             Text("Meeting speaker labels use FluidAudio's offline diarization models. Offline mode requires these models to be cached first.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var modelManagementSettings: some View {
+        Section("Model Cache") {
+            LabeledContent("Offline mode") {
+                Label(store.offlineMode ? "On" : "Off", systemImage: store.offlineMode ? "wifi.slash" : "wifi")
+                    .foregroundStyle(store.offlineMode ? .orange : .secondary)
+            }
+
+            Text("Cached models can be used without network access. Downloads are blocked while offline mode is on.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            ForEach(store.modelAssets) { asset in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Label(asset.title, systemImage: modelAssetIcon(asset))
+                            .font(.headline)
+
+                        if asset.isSelected {
+                            Text("Selected")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Text(asset.kind.label)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text(asset.detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Label(asset.isCached ? "Cached" : "Not cached", systemImage: asset.isCached ? "checkmark.circle.fill" : "arrow.down.circle")
+                            .foregroundStyle(asset.isCached ? .green : .orange)
+
+                        Text(asset.cacheSizeLabel)
+                            .foregroundStyle(.secondary)
+
+                        Spacer()
+
+                        Button(asset.isCached ? "Reload" : "Download", systemImage: asset.isCached ? "arrow.clockwise" : "arrow.down.circle") {
+                            Task { await store.prepareModelAsset(asset) }
+                        }
+                        .disabled(store.offlineMode && !asset.isCached || !asset.supportsDownload || store.modelLoadState.isLoading || store.diarizationModelLoadState.isLoading)
+
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            modelAssetPendingDeletion = asset
+                        }
+                        .disabled(!asset.isCached)
+                    }
+                    .font(.callout)
+                }
+                .padding(.vertical, 6)
+
+                Divider()
+            }
+
+            HStack {
+                Button("Refresh", systemImage: "arrow.clockwise") {
+                    store.refreshModelAssets()
+                }
+
+                Button("Show Cache", systemImage: "folder") {
+                    store.openModelCacheFolder()
+                }
+            }
+        }
+        .onAppear {
+            store.refreshModelAssets()
+        }
+    }
+
+    private func modelAssetIcon(_ asset: ModelAssetState) -> String {
+        switch asset.kind {
+        case .asr:
+            "waveform"
+        case .diarization:
+            "person.2"
+        case .vocabularyBoosting:
+            "text.badge.checkmark"
         }
     }
 

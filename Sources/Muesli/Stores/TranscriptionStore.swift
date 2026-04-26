@@ -42,6 +42,7 @@ final class TranscriptionStore: ObservableObject {
     @Published var selectedModel: ParakeetModel = .v3 {
         didSet {
             UserDefaults.standard.set(selectedModel.rawValue, forKey: PreferenceKey.selectedModel)
+            refreshModelAssets()
         }
     }
     @Published var statusMessage = "Ready"
@@ -50,6 +51,7 @@ final class TranscriptionStore: ObservableObject {
     @Published var isWarmingModel = false
     @Published var modelLoadState: ModelLoadState = .idle
     @Published var diarizationModelLoadState: ModelLoadState = .idle
+    @Published var modelAssets: [ModelAssetState] = []
     @Published var recordingElapsed: TimeInterval = 0
     @Published var liveChunkStats: [TranscriptSession.ID: LiveChunkStats] = [:]
     @Published var transcriberHealth: TranscriberHealth?
@@ -238,6 +240,7 @@ final class TranscriptionStore: ObservableObject {
         normalizeInterruptedSessions()
         applyRetentionPolicy()
         selectedSessionID = sessions.first?.id
+        refreshModelAssets()
     }
 
     var latestRecordingURL: URL? {
@@ -1087,6 +1090,7 @@ final class TranscriptionStore: ObservableObject {
 
         isWarmingModel = false
         refreshTranscriberHealth()
+        refreshModelAssets()
     }
 
     func prepareDiarizer() async {
@@ -1117,6 +1121,84 @@ final class TranscriptionStore: ObservableObject {
                 detail: "Speaker diarization models could not be prepared: \(error.localizedDescription)"
             )
         }
+        refreshModelAssets()
+    }
+
+    func prepareLiveDiarizer() async {
+        guard !diarizationModelLoadState.isLoading else { return }
+
+        let cached = FluidAudioDiarizer.lseendModelsAreCached()
+        if offlineMode && !cached {
+            diarizationModelLoadState = .downloadRequired("Live speaker diarization")
+            statusMessage = "Offline mode is on. Turn it off once to download live speaker diarization models."
+            return
+        }
+
+        diarizationModelLoadState = cached ? .loadingCached("Live speaker diarization") : .downloading("Live speaker diarization")
+        statusMessage = cached ? "Loading cached live speaker diarization models..." : "Downloading live speaker diarization models..."
+
+        do {
+            try await diarizer.prepareLive(allowsModelDownload: !offlineMode)
+            diarizationModelLoadState = .ready("Live speaker diarization")
+            statusMessage = "Live speaker diarization is ready."
+        } catch DiarizationError.diarizationModelDownloadRequired {
+            diarizationModelLoadState = .downloadRequired("Live speaker diarization")
+            statusMessage = "Live speaker diarization models must be downloaded before offline use."
+        } catch {
+            diarizationModelLoadState = .failed(error.localizedDescription)
+            statusMessage = error.localizedDescription
+            activeIssue = AppIssue(
+                kind: .modelLoad,
+                detail: "Live speaker diarization models could not be prepared: \(error.localizedDescription)"
+            )
+        }
+        refreshModelAssets()
+    }
+
+    func refreshModelAssets() {
+        modelAssets = ModelAssetInventory.states(selectedModel: selectedModel)
+    }
+
+    func prepareModelAsset(_ asset: ModelAssetState) async {
+        switch asset.id {
+        case "asr-\(ParakeetModel.v2.rawValue)":
+            selectedModel = .v2
+            await prepareTranscriber()
+        case "asr-\(ParakeetModel.v3.rawValue)":
+            selectedModel = .v3
+            await prepareTranscriber()
+        case "diarization-offline":
+            await prepareDiarizer()
+        case "diarization-live":
+            await prepareLiveDiarizer()
+        default:
+            statusMessage = "\(asset.title) downloads when vocabulary boosting is used during transcription."
+        }
+        refreshModelAssets()
+    }
+
+    func deleteModelAsset(_ asset: ModelAssetState) {
+        do {
+            try ModelAssetInventory.deleteCache(for: asset)
+            if asset.isSelected {
+                modelLoadState = offlineMode ? .downloadRequired(asset.title) : .idle
+            }
+            if asset.kind == .diarization {
+                diarizationModelLoadState = offlineMode ? .downloadRequired(asset.title) : .idle
+            }
+            statusMessage = "Deleted cached files for \(asset.title)."
+        } catch {
+            statusMessage = "Could not delete \(asset.title): \(error.localizedDescription)"
+            activeIssue = AppIssue(
+                kind: .modelLoad,
+                detail: "Muesli could not delete cached files for \(asset.title): \(error.localizedDescription)"
+            )
+        }
+        refreshModelAssets()
+    }
+
+    func openModelCacheFolder() {
+        NSWorkspace.shared.activateFileViewerSelecting([ModelAssetInventory.baseModelsDirectory()])
     }
 
     func resetTranscriber() async {

@@ -51,6 +51,16 @@ actor FluidAudioDiarizer {
         liveDiarizer = diarizer
     }
 
+    func prepareLive(allowsModelDownload: Bool) async throws {
+        if !allowsModelDownload {
+            try Self.requireCachedLSEENDModels()
+        }
+        let diarizer = LSEENDDiarizer()
+        let descriptor = try await LSEENDModelDescriptor.loadFromHuggingFace(variant: .dihard3)
+        try diarizer.initialize(descriptor: descriptor)
+        diarizer.reset()
+    }
+
     func diarizeLiveChunk(chunkURL: URL) async throws -> [SpeakerTurn] {
         guard let liveDiarizer else { return [] }
         let samples = try AudioConverter().resampleAudioFile(chunkURL)
