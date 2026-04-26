@@ -22,6 +22,9 @@
   workflows.
 - Added a floating recording overlay with elapsed time, audio level, mode,
   privacy state, stop, and cancel controls.
+- Added voice-activity-driven live chunk rotation so streaming transcription
+  prefers natural speech pauses while retaining a maximum chunk length fallback
+  and failed-chunk retry support.
 - Added replacement rules for deterministic transcript cleanup, with a promotion
   action for the last manual transcript edit.
 - Added a custom dictionary correction layer for preferred words, names, product

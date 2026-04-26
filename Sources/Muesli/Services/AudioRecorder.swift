@@ -10,9 +10,10 @@ final class AudioRecorder {
     private var chunkDirectory: URL?
     private var chunkIndex = 0
     private var chunkFrameCount: AVAudioFramePosition = 0
+    private var chunkSilenceFrameCount: AVAudioFramePosition = 0
     private var totalChunkFrames: AVAudioFramePosition = 0
     private var chunkPeakPower: Float = -80
-    private var chunkTargetFrames: AVAudioFramePosition = 0
+    private var chunkRotation: VoiceActivityChunkRotation?
     private var onChunk: ((RecordingChunk) -> Void)?
     private var recordingFormat: AVAudioFormat?
     private var latestPower: Float = -80
@@ -32,7 +33,11 @@ final class AudioRecorder {
         }
     }
 
-    func start(chunkDuration: TimeInterval? = nil, onChunk: ((RecordingChunk) -> Void)? = nil) throws -> URL {
+    func start(
+        chunkDuration: TimeInterval? = nil,
+        vadConfiguration: VoiceActivityChunkRotation.Configuration? = nil,
+        onChunk: ((RecordingChunk) -> Void)? = nil
+    ) throws -> URL {
         stop()
 
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -59,9 +64,16 @@ final class AudioRecorder {
         self.chunkFile = nil
         self.chunkIndex = 0
         self.chunkFrameCount = 0
+        self.chunkSilenceFrameCount = 0
         self.totalChunkFrames = 0
         self.chunkPeakPower = -80
-        self.chunkTargetFrames = chunkDuration.map { AVAudioFramePosition($0 * inputFormat.sampleRate) } ?? 0
+        if let vadConfiguration {
+            self.chunkRotation = VoiceActivityChunkRotation(configuration: vadConfiguration, sampleRate: inputFormat.sampleRate)
+        } else if let chunkDuration {
+            self.chunkRotation = VoiceActivityChunkRotation.fixed(duration: chunkDuration, sampleRate: inputFormat.sampleRate)
+        } else {
+            self.chunkRotation = nil
+        }
         self.onChunk = onChunk
         latestPower = -80
         stateLock.unlock()
@@ -98,6 +110,8 @@ final class AudioRecorder {
             engine.stop()
         }
 
+        flushOpenChunk()
+
         processingQueue.sync {
             stateLock.lock()
             outputFile = nil
@@ -105,9 +119,10 @@ final class AudioRecorder {
             chunkDirectory = nil
             chunkIndex = 0
             chunkFrameCount = 0
+            chunkSilenceFrameCount = 0
             totalChunkFrames = 0
             chunkPeakPower = -80
-            chunkTargetFrames = 0
+            chunkRotation = nil
             onChunk = nil
             recordingFormat = nil
             latestPower = -80
@@ -145,8 +160,7 @@ final class AudioRecorder {
 
     private func writeChunk(from buffer: AVAudioPCMBuffer, format: AVAudioFormat, power: Float) throws {
         stateLock.lock()
-        let targetFrames = chunkTargetFrames
-        guard targetFrames > 0, let chunkDirectory else {
+        guard let rotation = chunkRotation, let chunkDirectory else {
             stateLock.unlock()
             return
         }
@@ -154,9 +168,15 @@ final class AudioRecorder {
         if chunkFile == nil {
             chunkIndex += 1
             chunkFrameCount = 0
+            chunkSilenceFrameCount = 0
             chunkPeakPower = -80
             let url = chunkDirectory.appending(path: String(format: "chunk-%04d.wav", chunkIndex))
-            chunkFile = try AVAudioFile(forWriting: url, settings: format.settings)
+            do {
+                chunkFile = try AVAudioFile(forWriting: url, settings: format.settings)
+            } catch {
+                stateLock.unlock()
+                throw error
+            }
         }
 
         guard let chunkFile else {
@@ -165,41 +185,77 @@ final class AudioRecorder {
         }
 
         let chunkURL = chunkFile.url
-        try chunkFile.write(from: buffer)
+        do {
+            try chunkFile.write(from: buffer)
+        } catch {
+            stateLock.unlock()
+            throw error
+        }
         chunkFrameCount += AVAudioFramePosition(buffer.frameLength)
+        if rotation.isSpeech(power: power) {
+            chunkSilenceFrameCount = 0
+        } else {
+            chunkSilenceFrameCount += AVAudioFramePosition(buffer.frameLength)
+        }
         chunkPeakPower = max(chunkPeakPower, power)
 
-        guard chunkFrameCount >= targetFrames else {
+        guard rotation.shouldRotate(chunkFrames: chunkFrameCount, trailingSilenceFrames: chunkSilenceFrameCount) else {
             stateLock.unlock()
             return
         }
 
+        let finishedChunk = finishCurrentChunkLocked(url: chunkURL, format: format)
+        let callback = onChunk
+        stateLock.unlock()
+
+        publish(finishedChunk, callback: callback)
+    }
+
+    private func flushOpenChunk() {
+        processingQueue.sync {
+            stateLock.lock()
+            guard let chunkFile, let recordingFormat else {
+                stateLock.unlock()
+                return
+            }
+
+            let finishedChunk = finishCurrentChunkLocked(url: chunkFile.url, format: recordingFormat)
+            let callback = onChunk
+            stateLock.unlock()
+
+            publish(finishedChunk, callback: callback)
+        }
+    }
+
+    private func finishCurrentChunkLocked(url: URL, format: AVAudioFormat) -> RecordingChunk {
         let finishedIndex = chunkIndex
         let finishedDuration = Double(chunkFrameCount) / format.sampleRate
         let finishedStartTime = Double(totalChunkFrames) / format.sampleRate
         let finishedEndTime = finishedStartTime + finishedDuration
         let finishedPeakPower = chunkPeakPower
-        let callback = onChunk
-        self.chunkFile = nil
+
+        chunkFile = nil
         totalChunkFrames += chunkFrameCount
         chunkFrameCount = 0
+        chunkSilenceFrameCount = 0
         chunkPeakPower = -80
-        stateLock.unlock()
 
-        guard finishedPeakPower >= speechPowerThreshold else {
+        return RecordingChunk(
+            url: url,
+            index: finishedIndex,
+            duration: finishedDuration,
+            startTime: finishedStartTime,
+            endTime: finishedEndTime,
+            peakPower: finishedPeakPower
+        )
+    }
+
+    private func publish(_ chunk: RecordingChunk, callback: ((RecordingChunk) -> Void)?) {
+        guard chunk.peakPower >= speechPowerThreshold else {
             return
         }
 
-        callback?(
-            RecordingChunk(
-                url: chunkURL,
-                index: finishedIndex,
-                duration: finishedDuration,
-                startTime: finishedStartTime,
-                endTime: finishedEndTime,
-                peakPower: finishedPeakPower
-            )
-        )
+        callback?(chunk)
     }
 
     private func calculatePower(from buffer: AVAudioPCMBuffer) -> Float {

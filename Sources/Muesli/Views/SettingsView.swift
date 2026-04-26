@@ -49,6 +49,13 @@ struct SettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
+                Picker("Recording overlay", selection: $store.recordingOverlayAnchor) {
+                    ForEach(RecordingOverlayAnchor.allCases) { anchor in
+                        Text(anchor.label).tag(anchor)
+                    }
+                }
+                .pickerStyle(.segmented)
+
                 LabeledContent("Clipboard fallback") {
                     Text("Always copy before paste")
                         .foregroundStyle(.secondary)

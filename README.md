@@ -16,6 +16,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Local Parakeet transcription through FluidAudio.
 - Model picker for Parakeet TDT 0.6B v3 and v2.
 - Live recording view with level meter and stabilized partial transcript.
+- Voice-activity-driven live transcription chunks that prefer natural speech
+  pauses and fall back to a maximum chunk length during continuous speech.
 - Saved recording history with transcript editing.
 - Encrypted local transcript metadata and stored recording files.
 - Configurable retention controls for recordings, transcripts, or both.
@@ -115,6 +117,8 @@ Local files are stored under `~/Library/Application Support/Muesli/`. Session
 metadata is saved in encrypted form in `sessions.json`; plaintext legacy session
 metadata is migrated to encrypted storage on load. Audio recordings and live
 chunk files are saved under `Recordings/` while recording and transcribing.
+Live chunks are rotated at speech pauses when possible, with a maximum chunk
+length fallback so continuous speech still streams predictably.
 Stored recording files are encrypted after successful transcription unless the
 recording is deleted by the "Delete raw audio after transcription" setting. Live
 chunk files are deleted after transcription. The local storage encryption key is

@@ -42,7 +42,7 @@ distribution features that depend on those foundations.
 - [x] Add a lightweight screen overlay while recording, including elapsed time,
   audio level, active mode, privacy state, and clear stop/cancel affordances.
   Decide whether it should appear above full-screen apps.
-- [ ] Add VAD-driven chunk rotation so live transcription splits audio at natural
+- [x] Add VAD-driven chunk rotation so live transcription splits audio at natural
   speech pauses instead of fixed intervals. Preserve privacy/storage guarantees
   for generated chunks and surface partial-failure recovery.
 

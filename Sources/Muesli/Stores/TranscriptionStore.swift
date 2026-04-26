@@ -23,6 +23,7 @@ final class TranscriptionStore: ObservableObject {
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
+        static let recordingOverlayAnchor = "recordingOverlayAnchor"
     }
 
     private static let pasteLogger = Logger(
@@ -123,6 +124,11 @@ final class TranscriptionStore: ObservableObject {
             UserDefaults.standard.set(dictationHotKeyMode.rawValue, forKey: PreferenceKey.dictationHotKeyMode)
         }
     }
+    @Published var recordingOverlayAnchor: RecordingOverlayAnchor = .top {
+        didSet {
+            UserDefaults.standard.set(recordingOverlayAnchor.rawValue, forKey: PreferenceKey.recordingOverlayAnchor)
+        }
+    }
     @Published private(set) var privacyMode: PrivacyMode = .localOnlyDictation
 
     private let recorder = AudioRecorder()
@@ -205,6 +211,10 @@ final class TranscriptionStore: ObservableObject {
            let hotKeyMode = DictationHotKeyMode(rawValue: hotKeyModeRawValue) {
             dictationHotKeyMode = hotKeyMode
         }
+        if let overlayAnchorRawValue = defaults.string(forKey: PreferenceKey.recordingOverlayAnchor),
+           let overlayAnchor = RecordingOverlayAnchor(rawValue: overlayAnchorRawValue) {
+            recordingOverlayAnchor = overlayAnchor
+        }
 
         sessions = persistence.load()
         hydrateRecordingMetadata()
@@ -253,12 +263,13 @@ final class TranscriptionStore: ObservableObject {
         }
 
         do {
-            let url = try recorder.start(chunkDuration: 1) { [weak self] chunk in
+            let sessionID = TranscriptSession.ID()
+            let url = try recorder.start(vadConfiguration: VoiceActivityChunkRotation.Configuration()) { [weak self] chunk in
                 Task { @MainActor [weak self] in
-                    self?.handleLiveChunk(chunk)
+                    self?.handleLiveChunk(chunk, sessionID: sessionID)
                 }
             }
-            let session = TranscriptSession(audioURL: url, model: selectedModel, status: .recording)
+            let session = TranscriptSession(id: sessionID, audioURL: url, model: selectedModel, status: .recording)
             sessions.insert(session, at: 0)
             selectedSessionID = session.id
             activeSessionID = session.id
@@ -518,35 +529,37 @@ final class TranscriptionStore: ObservableObject {
         }
     }
 
-    private func handleLiveChunk(_ chunk: RecordingChunk) {
-        guard isRecording, let activeSessionID else { return }
+    private func handleLiveChunk(_ chunk: RecordingChunk, sessionID: TranscriptSession.ID) {
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }) else { return }
 
-        let model = selectedModel
-        liveChunkStats[activeSessionID, default: LiveChunkStats()].submitted += 1
-        statusMessage = "Transcribing chunk \(chunk.index)..."
+        let model = sessions[index].model
+        liveChunkStats[sessionID, default: LiveChunkStats()].submitted += 1
+        if isRecording, sessionID == activeSessionID {
+            statusMessage = "Transcribing chunk \(chunk.index)..."
+        }
         let previousTask = liveChunkQueue
         liveChunkQueue = Task { [weak self] in
             await previousTask?.value
             guard let self else { return }
 
             do {
-                if let result = try await self.transcriber.streamChunk(sessionID: activeSessionID, chunkURL: chunk.url, model: model) {
+                if let result = try await self.transcriber.streamChunk(sessionID: sessionID, chunkURL: chunk.url, model: model) {
                     await MainActor.run {
                         self.replaceLiveTranscript(
                             result,
-                            sessionID: activeSessionID,
+                            sessionID: sessionID,
                             chunkIndex: chunk.index
                         )
                     }
                 } else {
                     await MainActor.run {
-                        self.liveChunkStats[activeSessionID, default: LiveChunkStats()].completed += 1
+                        self.liveChunkStats[sessionID, default: LiveChunkStats()].completed += 1
                     }
                 }
             } catch {
                 await MainActor.run {
-                    self.failedLiveChunks[activeSessionID, default: []].append(chunk)
-                    self.liveChunkStats[activeSessionID, default: LiveChunkStats()].failed += 1
+                    self.failedLiveChunks[sessionID, default: []].append(chunk)
+                    self.liveChunkStats[sessionID, default: LiveChunkStats()].failed += 1
                     self.statusMessage = "Chunk \(chunk.index) failed: \(error.localizedDescription)"
                 }
             }
