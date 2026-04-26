@@ -25,6 +25,12 @@ struct MenuBarView: View {
                 }
 
                 Divider()
+            } else if let feedback = store.latestFeedbackEvent {
+                Label(feedback.title, systemImage: feedback.kind.systemImage)
+                Text(feedback.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Divider()
             }
 
             Button {

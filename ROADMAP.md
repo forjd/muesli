@@ -33,7 +33,7 @@ distribution features that depend on those foundations.
 
 - [x] Improve error states for missing microphone permission, missing Accessibility
   permission, failed model load, failed paste, and unavailable hotkeys.
-- [ ] Improve global dictation feedback when recording starts, stops, transcribes,
+- [x] Improve global dictation feedback when recording starts, stops, transcribes,
   fails, or pastes into another app.
 - [ ] Add optional sound effects for recording start, stop, cancellation, and
   failure states.

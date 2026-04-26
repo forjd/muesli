@@ -14,6 +14,8 @@
   model is already cached locally.
 - Added actionable issue banners for microphone, Accessibility, model load,
   paste, and hotkey failures.
+- Added global dictation feedback events and background notifications for
+  recording, transcription, failures, and paste completion.
 
 ## [0.1.2](https://github.com/forjd/muesli/compare/v0.1.1...v0.1.2) (2026-04-25)
 

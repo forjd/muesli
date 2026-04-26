@@ -24,6 +24,8 @@ See [ROADMAP.md](ROADMAP.md) for planned product directions.
 - Offline mode that blocks model downloads and future network features unless
   the selected model is already cached.
 - Actionable issue banners for permission, model, paste, and hotkey failures.
+- Global dictation feedback through menu-bar events and macOS notifications when
+  Muesli is in the background.
 - One-shot global dictation using `Command-Shift-D`.
 - Menu bar controls for dictation, recording, model selection, and settings.
 - Export transcripts as plain text, JSON, or SRT.

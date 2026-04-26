@@ -3,6 +3,7 @@ import ApplicationServices
 import AVFoundation
 import Foundation
 import OSLog
+import UserNotifications
 
 @MainActor
 final class TranscriptionStore: ObservableObject {
@@ -35,6 +36,7 @@ final class TranscriptionStore: ObservableObject {
     }
     @Published var statusMessage = "Ready"
     @Published var activeIssue: AppIssue?
+    @Published var latestFeedbackEvent: DictationFeedbackEvent?
     @Published var isWarmingModel = false
     @Published var modelLoadState: ModelLoadState = .idle
     @Published var recordingElapsed: TimeInterval = 0
@@ -206,7 +208,7 @@ final class TranscriptionStore: ObservableObject {
             liveChunkStats[session.id] = LiveChunkStats()
             activeRecordingURL = url
             isRecording = true
-            statusMessage = "Recording..."
+            publishFeedback(title: "Recording Started", detail: "Listening for dictation.", kind: .recordingStarted)
             try await transcriber.startStreaming(sessionID: session.id, model: selectedModel)
             scheduleSave()
             startMetering()
@@ -234,6 +236,7 @@ final class TranscriptionStore: ObservableObject {
 
         if let activeSessionID, sessions.contains(where: { $0.id == activeSessionID }) {
             statusMessage = "Finalizing recording..."
+            latestFeedbackEvent = DictationFeedbackEvent(title: "Recording Stopped", detail: "Finalizing audio before transcription.", kind: .recordingStopped)
             self.activeRecordingURL = nil
             self.activeSessionID = nil
             if let index = sessions.firstIndex(where: { $0.id == activeSessionID }),
@@ -350,6 +353,7 @@ final class TranscriptionStore: ObservableObject {
         sessions[index].model = selectedModel
         updateRecordingMetadata(at: index)
         statusMessage = "Transcribing with \(selectedModel.label)..."
+        latestFeedbackEvent = DictationFeedbackEvent(title: "Transcribing", detail: "Converting speech with \(selectedModel.label).", kind: .transcribing)
         scheduleSave()
 
         let model = selectedModel
@@ -409,6 +413,7 @@ final class TranscriptionStore: ObservableObject {
                 sessions[updatedIndex].errorMessage = error.localizedDescription
             }
             statusMessage = error.localizedDescription
+            publishFeedback(title: "Transcription Failed", detail: error.localizedDescription, kind: .failed)
         }
 
         isBusy = false
@@ -693,6 +698,7 @@ final class TranscriptionStore: ObservableObject {
                 kind: .accessibilityPermission,
                 detail: "Muesli copied the transcript, but macOS Accessibility permission is required to paste into another app."
             )
+            latestFeedbackEvent = DictationFeedbackEvent(title: "Paste Blocked", detail: "Transcript copied; Accessibility permission is needed to paste.", kind: .failed)
             return
         }
 
@@ -717,8 +723,30 @@ final class TranscriptionStore: ObservableObject {
             }
 
             Task { @MainActor in
-                self?.statusMessage = "Copied transcript and sent paste shortcut."
+                self?.publishFeedback(title: "Dictation Pasted", detail: "Sent paste shortcut to the target app.", kind: .pasted)
             }
+        }
+    }
+
+    private func publishFeedback(title: String, detail: String, kind: DictationFeedbackKind) {
+        statusMessage = detail
+        latestFeedbackEvent = DictationFeedbackEvent(title: title, detail: detail, kind: kind)
+
+        guard !NSApp.isActive else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            if settings.authorizationStatus == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert])
+            }
+            let refreshedSettings = await center.notificationSettings()
+            guard refreshedSettings.authorizationStatus == .authorized || refreshedSettings.authorizationStatus == .provisional else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = detail
+            let request = UNNotificationRequest(identifier: "muesli.dictation.\(UUID().uuidString)", content: content, trigger: nil)
+            try? await center.add(request)
         }
     }
 
