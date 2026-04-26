@@ -795,15 +795,15 @@ final class TranscriptionStore: ObservableObject {
         return true
     }
 
-    func copyTranscript(sessionID: TranscriptSession.ID) {
+    func copyTranscript(sessionID: TranscriptSession.ID, template: TranscriptClipboardTemplate = .plain) {
         guard let session = sessions.first(where: { $0.id == sessionID }), !session.transcript.isEmpty else {
             statusMessage = "No transcript to copy."
             return
         }
 
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(session.displayTranscript, forType: .string)
-        statusMessage = "Transcript copied."
+        NSPasteboard.general.setString(TranscriptExporter.clipboardText(for: session, template: template), forType: .string)
+        statusMessage = "\(template.label) copied."
     }
 
     private func pasteTranscript(sessionID: TranscriptSession.ID) {

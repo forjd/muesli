@@ -526,14 +526,28 @@ private struct RecordingActionBar: View {
 
             Spacer()
 
-            Button("Copy", systemImage: "doc.on.doc") {
-                store.copyTranscript(sessionID: session.id)
+            Menu {
+                ForEach(TranscriptClipboardTemplate.allCases) { template in
+                    Button(template.label) {
+                        store.copyTranscript(sessionID: session.id, template: template)
+                    }
+                }
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
             }
             .disabled(session.displayTranscript.isEmpty)
 
             Menu {
                 Button("Text") {
                     store.exportTranscript(sessionID: session.id, format: .text)
+                }
+
+                Button("Markdown") {
+                    store.exportTranscript(sessionID: session.id, format: .markdown)
+                }
+
+                Button("DOCX") {
+                    store.exportTranscript(sessionID: session.id, format: .docx)
                 }
 
                 Button("JSON") {
@@ -570,8 +584,12 @@ private struct RecordingActionBar: View {
             Spacer()
 
             Menu {
-                Button("Copy", systemImage: "doc.on.doc") {
-                    store.copyTranscript(sessionID: session.id)
+                Menu("Copy", systemImage: "doc.on.doc") {
+                    ForEach(TranscriptClipboardTemplate.allCases) { template in
+                        Button(template.label) {
+                            store.copyTranscript(sessionID: session.id, template: template)
+                        }
+                    }
                 }
                 .disabled(session.displayTranscript.isEmpty)
 
@@ -582,6 +600,16 @@ private struct RecordingActionBar: View {
 
                 Button("Export Text") {
                     store.exportTranscript(sessionID: session.id, format: .text)
+                }
+                .disabled(session.displayTranscript.isEmpty)
+
+                Button("Export Markdown") {
+                    store.exportTranscript(sessionID: session.id, format: .markdown)
+                }
+                .disabled(session.displayTranscript.isEmpty)
+
+                Button("Export DOCX") {
+                    store.exportTranscript(sessionID: session.id, format: .docx)
                 }
                 .disabled(session.displayTranscript.isEmpty)
 

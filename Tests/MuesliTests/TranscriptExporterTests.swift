@@ -3,6 +3,9 @@ import Foundation
 struct TranscriptExporterTests {
     static func run() throws {
         try testTextExportUsesDisplayTranscript()
+        try testMarkdownExportIncludesMetadataAndTranscript()
+        try testClipboardNotesTemplateIncludesSections()
+        try testDOCXExportCreatesZipPackage()
         try testSRTExportSortsSegmentsAndEnforcesMinimumDuration()
         try testSRTExportFallsBackWhenNoSegmentsExist()
     }
@@ -19,6 +22,49 @@ struct TranscriptExporterTests {
         let data = try TranscriptExporter.data(for: session, format: .text)
 
         try expectEqual(String(decoding: data, as: UTF8.self), "final")
+    }
+
+    private static func testMarkdownExportIncludesMetadataAndTranscript() throws {
+        let session = TranscriptSession(
+            createdAt: Date(timeIntervalSince1970: 0),
+            audioURL: URL(filePath: "/tmp/audio.wav"),
+            model: .v3,
+            transcript: "hello markdown",
+            duration: 65
+        )
+
+        let text = String(decoding: try TranscriptExporter.data(for: session, format: .markdown), as: UTF8.self)
+
+        try expect(text.contains("# Muesli Transcript"), "Missing Markdown heading")
+        try expect(text.contains("- Model: Parakeet TDT 0.6B v3"), "Missing model metadata")
+        try expect(text.contains("hello markdown"), "Missing transcript")
+    }
+
+    private static func testClipboardNotesTemplateIncludesSections() throws {
+        let session = TranscriptSession(
+            audioURL: URL(filePath: "/tmp/audio.wav"),
+            model: .v3,
+            transcript: "remember this"
+        )
+
+        let text = TranscriptExporter.clipboardText(for: session, template: .notes)
+
+        try expect(text.contains("## Summary"), "Missing summary section")
+        try expect(text.contains("## Transcript"), "Missing transcript section")
+        try expect(text.contains("remember this"), "Missing transcript body")
+    }
+
+    private static func testDOCXExportCreatesZipPackage() throws {
+        let session = TranscriptSession(
+            audioURL: URL(filePath: "/tmp/audio.wav"),
+            model: .v3,
+            transcript: "docx body"
+        )
+
+        let data = try TranscriptExporter.data(for: session, format: .docx)
+
+        try expect(data.count > 4, "DOCX package was empty")
+        try expectEqual(Array(data.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
     }
 
     private static func testSRTExportSortsSegmentsAndEnforcesMinimumDuration() throws {
