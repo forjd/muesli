@@ -176,11 +176,17 @@ General, Work, Code, Medical, and Legal profiles, and you can add project-specif
 profiles in Settings. Only the selected profile is applied as a correction layer
 after transcription.
 
+Settings also includes optional final-pass vocabulary boosting for the selected
+dictionary profile. When enabled, Muesli asks FluidAudio to run its CTC rescoring
+pipeline after the recording finishes. This can download an additional local CTC
+model the first time it runs, adds final-pass latency, and is not used for live
+streaming updates.
+
 ## Vocabulary Biasing Limits
 
-Muesli's replacement rules and custom dictionaries are currently post-transcript
-correction layers. They do not train, fine-tune, or directly teach the selected
-Parakeet TDT model.
+Muesli's replacement rules and custom dictionaries do not train, fine-tune, or
+directly teach the selected Parakeet TDT model. Replacement rules remain the
+deterministic fallback correction layer.
 
 FluidAudio does expose a CTC-based custom vocabulary boosting pipeline. Its
 documentation describes this as vocabulary scoring and rescoring, not model
@@ -190,9 +196,9 @@ audio window with token timings. FluidAudio notes that file or full-final-pass
 transcription is the best fit; streaming vocabulary boosting has reduced accuracy,
 especially for multi-word terms or terms that cross chunk boundaries.
 
-Until Muesli integrates that CTC rescoring path explicitly, dictionary profiles
-should be treated as deterministic cleanup after transcription. UI copy should not
-describe them as model training, adaptation, or guaranteed acoustic biasing.
+If offline mode is enabled before the CTC model is cached, Muesli skips vocabulary
+boosting and keeps the regular local transcript plus deterministic cleanup rather
+than downloading model files.
 
 ## Development
 

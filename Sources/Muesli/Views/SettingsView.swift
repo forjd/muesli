@@ -264,6 +264,12 @@ struct SettingsView: View {
                     }
                 }
 
+                Toggle("Boost dictionary terms during final pass", isOn: $store.finalPassVocabularyBoostingEnabled)
+
+                Text("Uses FluidAudio's CTC rescoring model after recording finishes. It can download an extra local model, adds final-pass latency, and does not improve live streaming accuracy.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+
                 HStack {
                     TextField("New profile", text: $dictionaryProfileName)
                     Button("Add Profile", systemImage: "person.crop.circle.badge.plus") {

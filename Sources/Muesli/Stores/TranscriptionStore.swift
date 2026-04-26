@@ -20,6 +20,7 @@ final class TranscriptionStore: ObservableObject {
         static let customDictionaryTerms = "customDictionaryTerms"
         static let customDictionaryProfiles = "customDictionaryProfiles"
         static let selectedCustomDictionaryProfileID = "selectedCustomDictionaryProfileID"
+        static let finalPassVocabularyBoostingEnabled = "finalPassVocabularyBoostingEnabled"
         static let retentionPolicy = "retentionPolicy"
         static let dictationHotKey = "dictationHotKey"
         static let dictationHotKeyMode = "dictationHotKeyMode"
@@ -100,6 +101,11 @@ final class TranscriptionStore: ObservableObject {
     @Published var selectedCustomDictionaryProfileID: CustomDictionaryProfile.ID = CustomDictionaryProfile.generalID {
         didSet {
             UserDefaults.standard.set(selectedCustomDictionaryProfileID.uuidString, forKey: PreferenceKey.selectedCustomDictionaryProfileID)
+        }
+    }
+    @Published var finalPassVocabularyBoostingEnabled = false {
+        didSet {
+            UserDefaults.standard.set(finalPassVocabularyBoostingEnabled, forKey: PreferenceKey.finalPassVocabularyBoostingEnabled)
         }
     }
     @Published var lastManualReplacementSuggestion: ReplacementRule?
@@ -195,6 +201,9 @@ final class TranscriptionStore: ObservableObject {
             selectedCustomDictionaryProfileID = selectedProfileID
         } else if let firstProfileID = customDictionaryProfiles.first?.id {
             selectedCustomDictionaryProfileID = firstProfileID
+        }
+        if defaults.object(forKey: PreferenceKey.finalPassVocabularyBoostingEnabled) != nil {
+            finalPassVocabularyBoostingEnabled = defaults.bool(forKey: PreferenceKey.finalPassVocabularyBoostingEnabled)
         }
         if let retentionPolicyData = defaults.data(forKey: PreferenceKey.retentionPolicy),
            let policy = try? JSONDecoder().decode(RetentionPolicy.self, from: retentionPolicyData) {
@@ -456,7 +465,12 @@ final class TranscriptionStore: ObservableObject {
                 }
             }
 
-            let result = try await transcriber.transcribe(audioURL: transcriptionAudioURL, model: model)
+            let vocabularyBoostingRequest = finalPassVocabularyBoostingRequest()
+            let result = try await transcriber.transcribe(
+                audioURL: transcriptionAudioURL,
+                model: model,
+                vocabularyBoosting: vocabularyBoostingRequest
+            )
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
                 sessions[updatedIndex].status = .complete
                 let trimmed = applyReplacementRules(to: result.text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -475,7 +489,12 @@ final class TranscriptionStore: ObservableObject {
                 deleteChunkFiles(for: sessions[updatedIndex])
             }
             if statusMessage.hasPrefix("Transcription complete, but audio encryption failed") == false {
-                statusMessage = "Transcription complete."
+                if let vocabularyBoosting = result.vocabularyBoosting,
+                   vocabularyBoosting.status != .skipped || !vocabularyBoosting.detectedTerms.isEmpty {
+                    statusMessage = vocabularyBoosting.message
+                } else {
+                    statusMessage = "Transcription complete."
+                }
             }
         } catch {
             if let updatedIndex = sessions.firstIndex(where: { $0.id == sessionID }) {
@@ -1107,6 +1126,17 @@ final class TranscriptionStore: ObservableObject {
     private func applyReplacementRules(to text: String) -> String {
         let replaced = ReplacementRuleEngine(rules: replacementRules).apply(to: text)
         return CustomDictionaryEngine(terms: selectedCustomDictionaryTerms).apply(to: replaced)
+    }
+
+    private func finalPassVocabularyBoostingRequest() -> VocabularyBoostingRequest? {
+        guard finalPassVocabularyBoostingEnabled else { return nil }
+        let enabledTerms = selectedCustomDictionaryTerms
+            .filter(\.isEnabled)
+            .map(\.value)
+        return VocabularyBoostingRequest(
+            terms: enabledTerms,
+            allowsModelDownload: !offlineMode
+        )
     }
 
     var selectedCustomDictionaryProfile: CustomDictionaryProfile? {

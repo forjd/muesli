@@ -59,7 +59,7 @@ distribution features that depend on those foundations.
 - [x] Investigate whether FluidAudio or the underlying Parakeet model supports any
   practical form of vocabulary biasing or adaptation, and document the limits
   before presenting it as model teaching in the UI.
-- [ ] Add optional FluidAudio CTC vocabulary boosting for final-pass transcription
+- [x] Add optional FluidAudio CTC vocabulary boosting for final-pass transcription
   using the selected dictionary profile, with clear download, latency, and
   streaming-accuracy limits. Keep replacement rules as a fallback correction
   layer.

@@ -5,6 +5,26 @@ import Foundation
 struct TranscriptionResult: Decodable {
     var text: String
     var model: String
+    var vocabularyBoosting: VocabularyBoostingResult?
+}
+
+struct VocabularyBoostingRequest: Hashable {
+    var terms: [String]
+    var allowsModelDownload: Bool
+}
+
+struct VocabularyBoostingResult: Hashable, Codable {
+    enum Status: String, Hashable, Codable {
+        case skipped
+        case applied
+        case unavailable
+        case failed
+    }
+
+    var status: Status
+    var detectedTerms: [String]
+    var appliedTerms: [String]
+    var message: String
 }
 
 struct StreamingTranscriptionResult: Hashable {
@@ -17,6 +37,7 @@ struct StreamingTranscriptionResult: Hashable {
 enum TranscriptionError: LocalizedError {
     case invalidAudio(URL)
     case audioConversionFailed(String)
+    case ctcModelDownloadRequired
 
     var errorDescription: String? {
         switch self {
@@ -24,6 +45,8 @@ enum TranscriptionError: LocalizedError {
             "Could not read audio at \(url.path)."
         case let .audioConversionFailed(message):
             "Could not prepare audio for FluidAudio: \(message)"
+        case .ctcModelDownloadRequired:
+            "FluidAudio CTC vocabulary boosting models are not cached."
         }
     }
 }
@@ -31,8 +54,12 @@ enum TranscriptionError: LocalizedError {
 actor ParakeetTranscriber {
     private var fluidAudio = FluidAudioBackend()
 
-    func transcribe(audioURL: URL, model: ParakeetModel) async throws -> TranscriptionResult {
-        try await fluidAudio.transcribe(audioURL: audioURL, model: model)
+    func transcribe(
+        audioURL: URL,
+        model: ParakeetModel,
+        vocabularyBoosting: VocabularyBoostingRequest? = nil
+    ) async throws -> TranscriptionResult {
+        try await fluidAudio.transcribe(audioURL: audioURL, model: model, vocabularyBoosting: vocabularyBoosting)
     }
 
     func preload(model: ParakeetModel) async throws {
@@ -67,16 +94,26 @@ actor ParakeetTranscriber {
 private actor FluidAudioBackend {
     private var asrManager: AsrManager?
     private var cachedModels: AsrModels?
+    private var ctcModels: CtcModels?
     private var activeVersion: AsrModelVersion?
     private var streamingSessions: [TranscriptSession.ID: FluidAudioStreamingSession] = [:]
 
-    func transcribe(audioURL: URL, model: ParakeetModel) async throws -> TranscriptionResult {
+    func transcribe(
+        audioURL: URL,
+        model: ParakeetModel,
+        vocabularyBoosting: VocabularyBoostingRequest?
+    ) async throws -> TranscriptionResult {
         let manager = try await ensureManager(for: model)
         let samples = try Self.readMono16kSamples(from: audioURL)
 
         var decoderState = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
         let result = try await manager.transcribe(samples, decoderState: &decoderState)
-        return TranscriptionResult(text: result.text, model: model.rawValue)
+        let boosted = await applyVocabularyBoostingIfNeeded(
+            request: vocabularyBoosting,
+            samples: samples,
+            result: result
+        )
+        return TranscriptionResult(text: boosted.text, model: model.rawValue, vocabularyBoosting: boosted.metadata)
     }
 
     func preload(model: ParakeetModel) async throws {
@@ -116,6 +153,7 @@ private actor FluidAudioBackend {
     func cleanup() async {
         await asrManager?.cleanup()
         asrManager = nil
+        ctcModels = nil
         activeVersion = nil
         streamingSessions.removeAll()
     }
@@ -155,6 +193,147 @@ private actor FluidAudioBackend {
         asrManager = manager
         activeVersion = version
         return manager
+    }
+
+    private func ensureCtcModels(allowsDownload: Bool) async throws -> CtcModels {
+        if let ctcModels {
+            return ctcModels
+        }
+
+        let cacheDirectory = CtcModels.defaultCacheDirectory()
+        let models: CtcModels
+        if CtcModels.modelsExist(at: cacheDirectory) {
+            models = try await CtcModels.load(from: cacheDirectory)
+        } else {
+            guard allowsDownload else {
+                throw TranscriptionError.ctcModelDownloadRequired
+            }
+            models = try await CtcModels.downloadAndLoad()
+        }
+        ctcModels = models
+        return models
+    }
+
+    private func applyVocabularyBoostingIfNeeded(
+        request: VocabularyBoostingRequest?,
+        samples: [Float],
+        result: ASRResult
+    ) async -> (text: String, metadata: VocabularyBoostingResult?) {
+        guard let request else {
+            return (result.text, nil)
+        }
+
+        let terms = Self.normalizedVocabularyTerms(request.terms)
+        guard !terms.isEmpty else {
+            return (
+                result.text,
+                VocabularyBoostingResult(
+                    status: .skipped,
+                    detectedTerms: [],
+                    appliedTerms: [],
+                    message: "Vocabulary boosting skipped because the selected dictionary profile has no enabled terms."
+                )
+            )
+        }
+
+        guard let tokenTimings = result.tokenTimings, !tokenTimings.isEmpty else {
+            return (
+                result.text,
+                VocabularyBoostingResult(
+                    status: .unavailable,
+                    detectedTerms: [],
+                    appliedTerms: [],
+                    message: "Vocabulary boosting unavailable because FluidAudio did not return token timings."
+                )
+            )
+        }
+
+        do {
+            let ctcModels = try await ensureCtcModels(allowsDownload: request.allowsModelDownload)
+            let tokenizer = try await CtcTokenizer.load(from: CtcModels.defaultCacheDirectory(for: ctcModels.variant))
+            let vocabularyTerms = terms.compactMap { term -> CustomVocabularyTerm? in
+                let tokenIDs = tokenizer.encode(term)
+                guard !tokenIDs.isEmpty else { return nil }
+                return CustomVocabularyTerm(text: term, ctcTokenIds: tokenIDs)
+            }
+
+            guard !vocabularyTerms.isEmpty else {
+                return (
+                    result.text,
+                    VocabularyBoostingResult(
+                        status: .unavailable,
+                        detectedTerms: [],
+                        appliedTerms: [],
+                        message: "Vocabulary boosting unavailable because no dictionary terms could be tokenized."
+                    )
+                )
+            }
+
+            let vocabulary = CustomVocabularyContext(terms: vocabularyTerms)
+            let spotter = CtcKeywordSpotter(models: ctcModels, blankId: ctcModels.vocabulary.count)
+            let spotResult = try await spotter.spotKeywordsWithLogProbs(
+                audioSamples: samples,
+                customVocabulary: vocabulary
+            )
+            let rescorer = try await VocabularyRescorer.create(
+                spotter: spotter,
+                vocabulary: vocabulary,
+                ctcModelDirectory: CtcModels.defaultCacheDirectory(for: ctcModels.variant)
+            )
+            let rescoreOutput = rescorer.ctcTokenRescore(
+                transcript: result.text,
+                tokenTimings: tokenTimings,
+                logProbs: spotResult.logProbs,
+                frameDuration: spotResult.frameDuration
+            )
+            let detectedTerms = spotResult.detections.map(\.term.text)
+            let appliedTerms = rescoreOutput.replacements
+                .filter(\.shouldReplace)
+                .compactMap(\.replacementWord)
+
+            return (
+                rescoreOutput.text,
+                VocabularyBoostingResult(
+                    status: rescoreOutput.wasModified ? .applied : .skipped,
+                    detectedTerms: Array(Set(detectedTerms)).sorted(),
+                    appliedTerms: Array(Set(appliedTerms)).sorted(),
+                    message: rescoreOutput.wasModified
+                        ? "Vocabulary boosting applied \(appliedTerms.count) replacement(s)."
+                        : "Vocabulary boosting ran; no higher-confidence replacements were applied."
+                )
+            )
+        } catch TranscriptionError.ctcModelDownloadRequired {
+            return (
+                result.text,
+                VocabularyBoostingResult(
+                    status: .unavailable,
+                    detectedTerms: [],
+                    appliedTerms: [],
+                    message: "Vocabulary boosting needs the FluidAudio CTC model download. Turn off offline mode and transcribe again to cache it."
+                )
+            )
+        } catch {
+            return (
+                result.text,
+                VocabularyBoostingResult(
+                    status: .failed,
+                    detectedTerms: [],
+                    appliedTerms: [],
+                    message: "Vocabulary boosting failed; using the regular transcript. \(error.localizedDescription)"
+                )
+            )
+        }
+    }
+
+    private static func normalizedVocabularyTerms(_ terms: [String]) -> [String] {
+        var seen = Set<String>()
+        return terms.compactMap { term in
+            let trimmed = term.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let key = trimmed.lowercased()
+            guard seen.insert(key).inserted else { return nil }
+            return trimmed
+        }
     }
 
     private static func readMono16kSamples(from url: URL) throws -> [Float] {
